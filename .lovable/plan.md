@@ -1,44 +1,46 @@
 
 
-## Private Platform with Authentication
+## Remove Sign-Up Functionality
 
-A secure, private platform with email/password authentication and a clean dark-mode dashboard.
-
----
-
-### 1. Login Page (Landing Page)
-- **Clean, centered login form** with email and password fields
-- **Dark mode styling** with a minimal, professional appearance
-- Sign in and Sign up functionality (toggle between modes)
-- Password reset flow
-- Error handling with clear user feedback
-- No public content - authentication is the only entry point
+Since your account (admin@nevaubi.com) is already created and you want to keep this platform private, I'll remove all sign-up related options from the login page.
 
 ---
 
-### 2. Supabase Authentication Setup
-- Enable email/password authentication
-- Configure auth redirects and session management
-- Secure session handling with proper auth state listeners
+### Changes to Login Page
+
+**Remove:**
+- The `signup` mode from the AuthMode type
+- The "Don't have an account? Sign up" link
+- The sign-up form handling logic
+- The "Create account" title/description variants
+
+**Keep:**
+- Sign-in functionality (email/password login)
+- Password reset functionality (in case you forget your password)
+- "Forgot password?" link
 
 ---
 
-### 3. Protected Dashboard
-- **Top navigation bar** with:
-  - Logo/app name on the left
-  - User email display and logout button on the right
-- **Home page** - clean empty state, ready for your future content
-- Responsive design that works on mobile and desktop
-- Protected routes that redirect to login if not authenticated
+### Files to Modify
+
+| File | Change |
+|------|--------|
+| `src/pages/Login.tsx` | Remove signup mode, related UI elements, and signup handling code |
 
 ---
 
-### 4. Route Protection
-- Automatic redirect to login for unauthenticated users
-- Redirect to dashboard after successful login
-- Clean logout flow that returns to login
+### Result
+
+The login page will only show:
+- Email and password fields
+- "Sign in" button
+- "Forgot password?" link
+
+No one will be able to create new accounts through the UI.
 
 ---
 
-**Visual Style**: Dark mode throughout with clean typography and subtle borders
+### Technical Details
+
+The `signUp` function will remain in the `useAuth` hook (it doesn't hurt to keep it), but it won't be accessible from the interface. This is a simple UI change that effectively locks down registration.
 
