@@ -95,6 +95,45 @@ export type Database = {
         }
         Relationships: []
       }
+      earnings_file_processing: {
+        Row: {
+          bucket_name: string
+          created_at: string | null
+          error_message: string | null
+          file_exists: boolean | null
+          file_size_bytes: number | null
+          id: string
+          processed_at: string | null
+          report_date: string
+          status: string | null
+          ticker: string
+        }
+        Insert: {
+          bucket_name: string
+          created_at?: string | null
+          error_message?: string | null
+          file_exists?: boolean | null
+          file_size_bytes?: number | null
+          id?: string
+          processed_at?: string | null
+          report_date: string
+          status?: string | null
+          ticker: string
+        }
+        Update: {
+          bucket_name?: string
+          created_at?: string | null
+          error_message?: string | null
+          file_exists?: boolean | null
+          file_size_bytes?: number | null
+          id?: string
+          processed_at?: string | null
+          report_date?: string
+          status?: string | null
+          ticker?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
