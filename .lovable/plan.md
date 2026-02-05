@@ -1,123 +1,58 @@
 
 
-## Step 1: Connect to External Storage and Access Excel Files
+## Implementation Plan: Two Daily File Processing Crons
 
-This plan focuses on building the infrastructure to connect to your external Supabase storage and access the 12 Excel files per ticker when earnings are detected.
+### Overview
+
+This plan adds two separate cron jobs to process Excel files for tickers reporting earnings, while leaving the existing 5:00 AM CT earnings fetch cron untouched.
 
 ---
 
-### Architecture Overview
+### Schedule Summary
+
+| Cron Job | Central Time | UTC (Cron Expression) | Purpose |
+|----------|--------------|----------------------|---------|
+| `fetch-earnings-daily` | 5:00 AM CT | `0 11 * * 1-5` | Existing - Populates earnings_calendar |
+| `process-premarket-files` | 8:15 AM CT | `15 14 * * 1-5` | NEW - Process BeforeMarket tickers |
+| `process-afterhours-files` | 5:30 PM CT | `30 23 * * 1-5` | NEW - Process AfterMarket + null tickers |
+
+---
+
+### Architecture
 
 ```text
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         Current Lovable Cloud                            │
-├─────────────────────────────────────────────────────────────────────────┤
-│  earnings_calendar table                                                 │
-│  (populated daily at 5 AM CT)                                           │
-│           │                                                              │
-│           ▼                                                              │
-│  ┌─────────────────────────────────┐                                    │
-│  │  process-earnings-files         │  ◄── NEW Edge Function             │
-│  │  (separate cron job)            │      Runs after earnings fetch     │
-│  └─────────────────────────────────┘                                    │
-│           │                                                              │
-└───────────┼─────────────────────────────────────────────────────────────┘
-            │
-            ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    External Supabase Project                             │
-├─────────────────────────────────────────────────────────────────────────┤
-│  Storage Buckets (12 total):                                            │
-│  ┌────────────────────────────┐  ┌────────────────────────────┐        │
-│  │  As Reported               │  │  Standardized              │        │
-│  │  ├── income-stmt-quarterly │  │  ├── income-stmt-quarterly │        │
-│  │  ├── income-stmt-annual    │  │  ├── income-stmt-annual    │        │
-│  │  ├── balance-sheet-quarterly│ │  ├── balance-sheet-quarterly│       │
-│  │  ├── balance-sheet-annual  │  │  ├── balance-sheet-annual  │        │
-│  │  ├── cash-flow-quarterly   │  │  ├── cash-flow-quarterly   │        │
-│  │  └── cash-flow-annual      │  │  └── cash-flow-annual      │        │
-│  └────────────────────────────┘  └────────────────────────────┘        │
-│                                                                          │
-│  Each bucket contains: {TICKER}.xlsx files                              │
-└─────────────────────────────────────────────────────────────────────────┘
+5:00 AM CT - fetch-earnings-daily (EXISTING - NO CHANGES)
+     │
+     ▼
+ earnings_calendar table populated
+     │
+     ├────────────────────────────────────────────┐
+     │                                            │
+     ▼                                            ▼
+8:15 AM CT                                   5:30 PM CT
+process-earnings-files                       process-earnings-files
+  (timing = 'premarket')                       (timing = 'afterhours')
+     │                                            │
+     ▼                                            ▼
+Filter: before_after_market                  Filter: before_after_market
+  = 'BeforeMarket'                             IN ('AfterMarket', NULL)
+     │                                            │
+     └────────────┬───────────────────────────────┘
+                  │
+                  ▼
+        For each ticker:
+        Access 12 Excel files from external storage
+        Log results to earnings_file_processing table
 ```
-
----
-
-### What You'll Need to Provide
-
-Before implementation, I'll need you to add two secrets for your external Supabase project:
-
-| Secret Name | Description |
-|-------------|-------------|
-| `EXTERNAL_SUPABASE_URL` | The URL of your external Supabase project (e.g., `https://xxxxx.supabase.co`) |
-| `EXTERNAL_SUPABASE_SERVICE_KEY` | The service role key for the external project (found in Project Settings → API) |
 
 ---
 
 ### Implementation Steps
 
-1. **Store External Supabase Credentials**
-   - Add `EXTERNAL_SUPABASE_URL` secret
-   - Add `EXTERNAL_SUPABASE_SERVICE_KEY` secret
+#### Step 1: Create Database Table
 
-2. **Create New Edge Function: `process-earnings-files`**
-   - Query `earnings_calendar` for today's tickers
-   - For each ticker, attempt to access all 12 Excel files from the external storage
-   - Log which files exist and which are missing
-   - Return a summary of accessible files
+Create `earnings_file_processing` table to track file access status.
 
-3. **Create Tracking Table: `earnings_file_processing`**
-   - Track processing status per ticker per day
-   - Columns: ticker, report_date, file_type, status, processed_at, error_message
-
-4. **Schedule Separate Cron Job**
-   - Run at 5:30 AM CT (30 minutes after earnings fetch)
-   - This gives time for the earnings data to be populated first
-
----
-
-### Storage Bucket Naming Clarification
-
-Please confirm your bucket naming structure. I'm assuming 12 separate buckets like:
-- `as-reported-income-stmt-quarterly`
-- `as-reported-income-stmt-annual`
-- `standardized-balance-sheet-quarterly`
-- etc.
-
-Or are they organized differently (e.g., two buckets with subfolders)?
-
----
-
-### Technical Details
-
-**Edge Function Logic (Phase 1 - Read Only):**
-```typescript
-// Create client for external Supabase
-const externalSupabase = createClient(
-  Deno.env.get('EXTERNAL_SUPABASE_URL')!,
-  Deno.env.get('EXTERNAL_SUPABASE_SERVICE_KEY')!
-);
-
-// For each ticker with earnings today
-for (const ticker of tickersWithEarnings) {
-  const buckets = [
-    'as-reported-income-stmt-quarterly',
-    'as-reported-income-stmt-annual',
-    // ... all 12 buckets
-  ];
-  
-  for (const bucket of buckets) {
-    const { data, error } = await externalSupabase.storage
-      .from(bucket)
-      .download(`${ticker}.xlsx`);
-    
-    // Log file accessibility status
-  }
-}
-```
-
-**New Table Schema:**
 ```sql
 CREATE TABLE earnings_file_processing (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -125,20 +60,130 @@ CREATE TABLE earnings_file_processing (
   report_date DATE NOT NULL,
   bucket_name TEXT NOT NULL,
   file_exists BOOLEAN DEFAULT false,
+  file_size_bytes INTEGER,
   processed_at TIMESTAMPTZ,
   status TEXT DEFAULT 'pending',
   error_message TEXT,
   created_at TIMESTAMPTZ DEFAULT now(),
   UNIQUE(ticker, report_date, bucket_name)
 );
+
+ALTER TABLE earnings_file_processing ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Authenticated users can view processing status"
+  ON earnings_file_processing FOR SELECT
+  TO authenticated USING (true);
 ```
 
 ---
 
-### Next Steps After This Phase
+#### Step 2: Create Edge Function
 
-Once we confirm the file access works:
-1. Choose a data source for financial statement updates
-2. Implement Excel file parsing and modification
-3. Add file upload back to storage after updates
+Create `process-earnings-files` function with a `timing` parameter:
+
+| Parameter | Values | Filters |
+|-----------|--------|---------|
+| `timing` | `'premarket'` | `before_after_market = 'BeforeMarket'` |
+| `timing` | `'afterhours'` | `before_after_market IN ('AfterMarket') OR IS NULL` |
+| `date` | `'YYYY-MM-DD'` | Override date (optional, for testing) |
+| `ticker` | `'AAPL'` | Process single ticker (optional, for testing) |
+
+**Storage Buckets to Check (12 total):**
+- `financials-annual-income`
+- `financials-quarterly-income`
+- `financials-annual-balance`
+- `financials-quarterly-balance`
+- `financials-annual-cashflow`
+- `financials-quarterly-cashflow`
+- `standardized-annual-income`
+- `standardized-quarterly-income`
+- `standardized-annual-balance`
+- `standardized-quarterly-balance`
+- `standardized-annual-cashflow`
+- `standardized-quarterly-cashflow`
+
+---
+
+#### Step 3: Schedule Two Cron Jobs
+
+**Pre-Market Cron (8:15 AM CT = 14:15 UTC):**
+```sql
+SELECT cron.schedule(
+  'process-premarket-files',
+  '15 14 * * 1-5',
+  $$
+  SELECT net.http_post(
+    url := 'https://wbwyumlaiwnqetqavnph.supabase.co/functions/v1/process-earnings-files',
+    headers := '{"Content-Type": "application/json", "Authorization": "Bearer ..."}'::jsonb,
+    body := '{"timing": "premarket"}'::jsonb
+  ) AS request_id;
+  $$
+);
+```
+
+**After-Hours Cron (5:30 PM CT = 23:30 UTC):**
+```sql
+SELECT cron.schedule(
+  'process-afterhours-files',
+  '30 23 * * 1-5',
+  $$
+  SELECT net.http_post(
+    url := 'https://wbwyumlaiwnqetqavnph.supabase.co/functions/v1/process-earnings-files',
+    headers := '{"Content-Type": "application/json", "Authorization": "Bearer ..."}'::jsonb,
+    body := '{"timing": "afterhours"}'::jsonb
+  ) AS request_id;
+  $$
+);
+```
+
+---
+
+#### Step 4: Update config.toml
+
+Add configuration for the new Edge Function:
+
+```toml
+[functions.process-earnings-files]
+verify_jwt = false
+```
+
+---
+
+### Files to Create/Modify
+
+| File | Action | Description |
+|------|--------|-------------|
+| `supabase/functions/process-earnings-files/index.ts` | Create | Edge Function with timing-based filtering |
+| `supabase/config.toml` | Modify | Add function configuration |
+| Database migration | Create | Add tracking table |
+| SQL insert | Execute | Schedule both cron jobs |
+
+---
+
+### Edge Function Logic Summary
+
+```text
+1. Parse request body for timing parameter
+2. Get current date in Central Time (or use override)
+3. Query earnings_calendar with appropriate filter:
+   - premarket: WHERE before_after_market = 'BeforeMarket'
+   - afterhours: WHERE before_after_market = 'AfterMarket' OR before_after_market IS NULL
+4. For each ticker found:
+   a. Connect to external Supabase using EXTERNAL_SUPABASE_URL and EXTERNAL_SUPABASE_SERVICE_KEY
+   b. Loop through 12 storage buckets
+   c. Attempt to download {TICKER}.xlsx from each bucket
+   d. Record file existence, size, or error
+   e. Upsert results to earnings_file_processing table
+5. Return summary of processed tickers and file accessibility
+```
+
+---
+
+### Testing Strategy
+
+After implementation:
+1. Manually call the function with `{"timing": "premarket", "ticker": "AAPL"}` to test a single ticker
+2. Verify file access works with external storage
+3. Check `earnings_file_processing` table for correct logging
+4. Monitor the scheduled cron jobs over a few days
 
