@@ -1,189 +1,314 @@
 
 
-## Implementation Plan: Two Daily File Processing Crons
+## Implementation Plan: Agentic Excel Processing with Modal + Anthropic
 
 ### Overview
 
-This plan adds two separate cron jobs to process Excel files for tickers reporting earnings, while leaving the existing 5:00 AM CT earnings fetch cron untouched.
-
----
-
-### Schedule Summary
-
-| Cron Job | Central Time | UTC (Cron Expression) | Purpose |
-|----------|--------------|----------------------|---------|
-| `fetch-earnings-daily` | 5:00 AM CT | `0 11 * * 1-5` | Existing - Populates earnings_calendar |
-| `process-premarket-files` | 8:15 AM CT | `15 14 * * 1-5` | NEW - Process BeforeMarket tickers |
-| `process-afterhours-files` | 5:30 PM CT | `30 23 * * 1-5` | NEW - Process AfterMarket + null tickers |
+Build a production-grade agentic system that processes 12 Excel files per ticker, dynamically understanding each file's unique schema, browsing financial data sources (web search + StockAnalysis.com), and updating the files with accurate values.
 
 ---
 
 ### Architecture
 
 ```text
-5:00 AM CT - fetch-earnings-daily (EXISTING - NO CHANGES)
-     │
-     ▼
- earnings_calendar table populated
-     │
-     ├────────────────────────────────────────────┐
-     │                                            │
-     ▼                                            ▼
-8:15 AM CT                                   5:30 PM CT
-process-earnings-files                       process-earnings-files
-  (timing = 'premarket')                       (timing = 'afterhours')
-     │                                            │
-     ▼                                            ▼
-Filter: before_after_market                  Filter: before_after_market
-  = 'BeforeMarket'                             IN ('AfterMarket', NULL)
-     │                                            │
-     └────────────┬───────────────────────────────┘
-                  │
-                  ▼
-        For each ticker:
-        Access 12 Excel files from external storage
-        Log results to earnings_file_processing table
+                    LOVABLE CLOUD                              MODAL.COM
+                    ─────────────                              ─────────
+                         │
+    ┌────────────────────┴────────────────────┐
+    │                                         │
+    │   Cron Triggers                         │
+    │   8:15 AM CT (premarket)                │
+    │   5:30 PM CT (afterhours)               │
+    │                                         │
+    └────────────────────┬────────────────────┘
+                         │
+                         ▼
+    ┌─────────────────────────────────────────┐
+    │  Edge Function: trigger-excel-agent     │
+    │  ─────────────────────────────────────  │
+    │  1. Query earnings_calendar             │
+    │  2. Filter by timing (pre/after)        │
+    │  3. POST to Modal webhook               │
+    │     with ticker list                    │
+    └────────────────────┬────────────────────┘
+                         │
+                         │ HTTPS POST
+                         ▼
+    ┌─────────────────────────────────────────────────────────────────┐
+    │                     MODAL.COM                                   │
+    │  ───────────────────────────────────────────────────────────── │
+    │                                                                 │
+    │  ┌───────────────────────────────────────────────────────────┐ │
+    │  │  @app.function()                                          │ │
+    │  │  process_ticker(ticker: str)                              │ │
+    │  │  ────────────────────────────────────                     │ │
+    │  │                                                           │ │
+    │  │  PHASE 1: SCHEMA DISCOVERY                                │ │
+    │  │  ├─ Download 12 Excel files from external storage         │ │
+    │  │  ├─ Parse each file with openpyxl                         │ │
+    │  │  └─ Feed structure to Anthropic for understanding         │ │
+    │  │                                                           │ │
+    │  │  PHASE 2: DATA GATHERING (Agentic)                        │ │
+    │  │  ├─ AI determines what data is needed                     │ │
+    │  │  ├─ Web search for recent financials                      │ │
+    │  │  ├─ Playwright browser: StockAnalysis.com                 │ │
+    │  │  │   ├─ Login with saved credentials                      │ │
+    │  │  │   ├─ Navigate to ticker financial pages                │ │
+    │  │  │   └─ Extract income/balance/cashflow data              │ │
+    │  │  └─ AI reconciles data from multiple sources              │ │
+    │  │                                                           │ │
+    │  │  PHASE 3: UPDATE & SAVE                                   │ │
+    │  │  ├─ AI maps data to correct cells in each file            │ │
+    │  │  ├─ Update Excel files with openpyxl                      │ │
+    │  │  └─ Upload files back to external storage                 │ │
+    │  │                                                           │ │
+    │  │  PHASE 4: REPORT                                          │ │
+    │  │  └─ POST status back to Lovable edge function             │ │
+    │  └───────────────────────────────────────────────────────────┘ │
+    │                                                                 │
+    │  Parallel execution: .map() across all tickers                  │
+    └─────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+### Component Details
+
+#### 1. Secrets Required
+
+| Secret Name | Purpose | Where Used |
+|-------------|---------|------------|
+| `ANTHROPIC_API_KEY` | Claude API for agentic reasoning | Modal |
+| `STOCKANALYSIS_USERNAME` | StockAnalysis.com login | Modal |
+| `STOCKANALYSIS_PASSWORD` | StockAnalysis.com login | Modal |
+| `MODAL_WEBHOOK_SECRET` | Secure webhook authentication | Edge Function + Modal |
+
+---
+
+#### 2. Edge Function: `trigger-excel-agent`
+
+A lightweight orchestrator that queries the database and triggers Modal:
+
+- Query `earnings_calendar` for tickers by timing
+- Query `earnings_file_processing` for file availability status
+- POST ticker list to Modal webhook endpoint
+- Log processing start to a new `excel_processing_runs` table
+
+---
+
+#### 3. Modal Application Structure
+
+```text
+excel-agent/
+├── app.py              # Modal app definition
+├── agent/
+│   ├── __init__.py
+│   ├── schema.py       # Excel schema analysis with Claude
+│   ├── browser.py      # Playwright browser automation
+│   ├── search.py       # Web search integration
+│   ├── updater.py      # Excel file update logic
+│   └── storage.py      # External Supabase storage client
+├── tools/
+│   ├── __init__.py
+│   ├── web_search.py   # Web search tool for Claude
+│   ├── browse.py       # Browser action tool for Claude
+│   └── excel.py        # Excel read/write tool for Claude
+└── requirements.txt    # openpyxl, anthropic, playwright
+```
+
+---
+
+#### 4. Anthropic Agent Design
+
+The agent uses Claude's tool-calling capability with a multi-step workflow:
+
+**System Prompt Context:**
+```text
+You are a financial data agent. Your task is to:
+1. Understand the structure of Excel financial files
+2. Identify what data needs to be updated (look for empty cells, outdated dates)
+3. Use tools to search the web and browse StockAnalysis.com
+4. Update the Excel files with accurate, verified financial data
+
+You have access to these tools:
+- analyze_excel: Inspect Excel file structure and contents
+- web_search: Search for financial data on the web
+- browse_stockanalysis: Navigate and extract data from StockAnalysis.com
+- update_excel_cell: Update a specific cell in an Excel file
+```
+
+**Tool Definitions:**
+
+| Tool | Description |
+|------|-------------|
+| `analyze_excel` | Parse Excel file, return sheet names, column headers, sample data, empty cells |
+| `web_search` | Search query for financial data (uses Firecrawl or similar) |
+| `browse_stockanalysis` | Login, navigate to ticker, extract financial tables |
+| `update_excel_cell` | Write value to specific sheet/cell in Excel file |
+| `save_all_files` | Upload all modified files back to storage |
+
+---
+
+#### 5. Browser Automation Flow (StockAnalysis.com)
+
+```text
+1. Launch Playwright browser (Modal has native support)
+2. Navigate to stockanalysis.com/login
+3. Enter credentials from environment
+4. Go to /stocks/{TICKER}/financials/
+5. Extract tables:
+   ├─ /income-statement/ (annual + quarterly)
+   ├─ /balance-sheet/ (annual + quarterly)
+   └─ /cash-flow-statement/ (annual + quarterly)
+6. Parse tables into structured data
+7. Return to agent for mapping
+```
+
+---
+
+#### 6. Database Tables
+
+**New table: `excel_processing_runs`**
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | UUID | Primary key |
+| `ticker` | TEXT | Stock ticker |
+| `report_date` | DATE | Earnings date |
+| `timing` | TEXT | 'premarket' or 'afterhours' |
+| `status` | TEXT | 'pending', 'processing', 'completed', 'failed' |
+| `files_updated` | INTEGER | Count of files modified |
+| `data_sources_used` | TEXT[] | Array of sources queried |
+| `error_message` | TEXT | Error details if failed |
+| `started_at` | TIMESTAMPTZ | Processing start time |
+| `completed_at` | TIMESTAMPTZ | Processing end time |
+| `created_at` | TIMESTAMPTZ | Record creation |
 
 ---
 
 ### Implementation Steps
 
-#### Step 1: Create Database Table
+#### Phase 1: Infrastructure Setup
 
-Create `earnings_file_processing` table to track file access status.
+1. **Add Secrets to Lovable Cloud**
+   - `ANTHROPIC_API_KEY`
+   - `STOCKANALYSIS_USERNAME`
+   - `STOCKANALYSIS_PASSWORD`
+   - `MODAL_WEBHOOK_SECRET`
 
-```sql
-CREATE TABLE earnings_file_processing (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  ticker TEXT NOT NULL,
-  report_date DATE NOT NULL,
-  bucket_name TEXT NOT NULL,
-  file_exists BOOLEAN DEFAULT false,
-  file_size_bytes INTEGER,
-  processed_at TIMESTAMPTZ,
-  status TEXT DEFAULT 'pending',
-  error_message TEXT,
-  created_at TIMESTAMPTZ DEFAULT now(),
-  UNIQUE(ticker, report_date, bucket_name)
-);
+2. **Create Database Table**
+   - Add `excel_processing_runs` for tracking
 
-ALTER TABLE earnings_file_processing ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Authenticated users can view processing status"
-  ON earnings_file_processing FOR SELECT
-  TO authenticated USING (true);
-```
+3. **Create Edge Function**
+   - `trigger-excel-agent` to orchestrate Modal calls
 
 ---
 
-#### Step 2: Create Edge Function
+#### Phase 2: Modal Application Development
 
-Create `process-earnings-files` function with a `timing` parameter:
+4. **Setup Modal Project**
+   - Initialize Modal app with Python 3.11
+   - Install dependencies: `openpyxl`, `anthropic`, `playwright`
+   - Configure browser image with Playwright
 
-| Parameter | Values | Filters |
-|-----------|--------|---------|
-| `timing` | `'premarket'` | `before_after_market = 'BeforeMarket'` |
-| `timing` | `'afterhours'` | `before_after_market IN ('AfterMarket') OR IS NULL` |
-| `date` | `'YYYY-MM-DD'` | Override date (optional, for testing) |
-| `ticker` | `'AAPL'` | Process single ticker (optional, for testing) |
+5. **Implement Storage Client**
+   - Download/upload files from external Supabase storage
+   - Handle authentication with service key
 
-**Storage Buckets to Check (12 total):**
-- `financials-annual-income`
-- `financials-quarterly-income`
-- `financials-annual-balance`
-- `financials-quarterly-balance`
-- `financials-annual-cashflow`
-- `financials-quarterly-cashflow`
-- `standardized-annual-income`
-- `standardized-quarterly-income`
-- `standardized-annual-balance`
-- `standardized-quarterly-balance`
-- `standardized-annual-cashflow`
-- `standardized-quarterly-cashflow`
+6. **Implement Browser Automation**
+   - StockAnalysis.com login flow
+   - Financial data extraction from ticker pages
+   - Error handling for rate limits/captchas
 
----
+7. **Build Agent Tools**
+   - `analyze_excel`: Dynamic schema understanding
+   - `web_search`: Financial data lookup
+   - `browse_stockanalysis`: Authenticated browsing
+   - `update_excel_cell`: Precise cell updates
 
-#### Step 3: Schedule Two Cron Jobs
-
-**Pre-Market Cron (8:15 AM CT = 14:15 UTC):**
-```sql
-SELECT cron.schedule(
-  'process-premarket-files',
-  '15 14 * * 1-5',
-  $$
-  SELECT net.http_post(
-    url := 'https://wbwyumlaiwnqetqavnph.supabase.co/functions/v1/process-earnings-files',
-    headers := '{"Content-Type": "application/json", "Authorization": "Bearer ..."}'::jsonb,
-    body := '{"timing": "premarket"}'::jsonb
-  ) AS request_id;
-  $$
-);
-```
-
-**After-Hours Cron (5:30 PM CT = 23:30 UTC):**
-```sql
-SELECT cron.schedule(
-  'process-afterhours-files',
-  '30 23 * * 1-5',
-  $$
-  SELECT net.http_post(
-    url := 'https://wbwyumlaiwnqetqavnph.supabase.co/functions/v1/process-earnings-files',
-    headers := '{"Content-Type": "application/json", "Authorization": "Bearer ..."}'::jsonb,
-    body := '{"timing": "afterhours"}'::jsonb
-  ) AS request_id;
-  $$
-);
-```
+8. **Create Agent Orchestrator**
+   - Claude conversation loop with tool calling
+   - Context window management for large Excel files
+   - Retry logic and error recovery
 
 ---
 
-#### Step 4: Update config.toml
+#### Phase 3: Integration
 
-Add configuration for the new Edge Function:
+9. **Create Webhook Endpoint in Modal**
+   - Receive ticker list from Lovable
+   - Spawn parallel processing with `.map()`
+   - Report results back
 
-```toml
-[functions.process-earnings-files]
-verify_jwt = false
-```
-
----
-
-### Files to Create/Modify
-
-| File | Action | Description |
-|------|--------|-------------|
-| `supabase/functions/process-earnings-files/index.ts` | Create | Edge Function with timing-based filtering |
-| `supabase/config.toml` | Modify | Add function configuration |
-| Database migration | Create | Add tracking table |
-| SQL insert | Execute | Schedule both cron jobs |
+10. **Schedule Cron Jobs**
+    - Modify existing crons to call new trigger function
+    - Or create new `trigger-excel-agent` crons
 
 ---
 
-### Edge Function Logic Summary
+#### Phase 4: Monitoring & Reliability
 
-```text
-1. Parse request body for timing parameter
-2. Get current date in Central Time (or use override)
-3. Query earnings_calendar with appropriate filter:
-   - premarket: WHERE before_after_market = 'BeforeMarket'
-   - afterhours: WHERE before_after_market = 'AfterMarket' OR before_after_market IS NULL
-4. For each ticker found:
-   a. Connect to external Supabase using EXTERNAL_SUPABASE_URL and EXTERNAL_SUPABASE_SERVICE_KEY
-   b. Loop through 12 storage buckets
-   c. Attempt to download {TICKER}.xlsx from each bucket
-   d. Record file existence, size, or error
-   e. Upsert results to earnings_file_processing table
-5. Return summary of processed tickers and file accessibility
-```
+11. **Add Status Callback**
+    - Modal posts completion status to Lovable
+    - Update `excel_processing_runs` table
+
+12. **Dashboard View**
+    - Display processing status and history
+    - Show success/failure rates per ticker
+
+---
+
+### Key Technical Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| **Excel Library** | openpyxl | Python standard, preserves formatting, supports .xlsx |
+| **AI Model** | Claude 3.5 Sonnet | Best for agentic tool-calling, cost-effective |
+| **Browser** | Playwright | Modal native support, reliable automation |
+| **Parallelism** | Modal .map() | Process 5-30 tickers concurrently |
+| **Search** | Firecrawl or Perplexity | Already have connector available |
+
+---
+
+### Cost Estimates (per day, 15 tickers average)
+
+| Component | Est. Cost |
+|-----------|-----------|
+| Modal compute (15 x 5 min) | ~$0.50 |
+| Anthropic API (15 x 10 calls) | ~$1.50 |
+| Total | ~$2-3/day |
+
+---
+
+### Files to Create
+
+| File | Purpose |
+|------|---------|
+| `supabase/functions/trigger-excel-agent/index.ts` | Orchestrator edge function |
+| `modal-app/app.py` | Modal application entry |
+| `modal-app/agent/schema.py` | Excel schema analysis |
+| `modal-app/agent/browser.py` | StockAnalysis automation |
+| `modal-app/agent/storage.py` | Supabase storage client |
+| `modal-app/tools/*.py` | Claude tool implementations |
+| Database migration | `excel_processing_runs` table |
 
 ---
 
 ### Testing Strategy
 
-After implementation:
-1. Manually call the function with `{"timing": "premarket", "ticker": "AAPL"}` to test a single ticker
-2. Verify file access works with external storage
-3. Check `earnings_file_processing` table for correct logging
-4. Monitor the scheduled cron jobs over a few days
+1. **Single Ticker Test**: Run agent on one ticker (e.g., AMZN) manually
+2. **Schema Flexibility Test**: Process files with different structures
+3. **Browser Reliability**: Test login flow and extraction
+4. **End-to-End**: Trigger via cron, verify files updated
+5. **Error Recovery**: Test with missing files, network failures
+
+---
+
+### Next Steps After Approval
+
+1. Set up the required secrets in Lovable Cloud
+2. Create the `excel_processing_runs` database table
+3. Build the `trigger-excel-agent` edge function
+4. Create the Modal application (provided as code for you to deploy)
+5. Wire everything together and test
 
