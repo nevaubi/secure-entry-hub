@@ -14,7 +14,45 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      companies: {
+        Row: {
+          cik: number | null
+          company_id: number
+          created_at: string
+          description: string | null
+          exchange: string | null
+          logo_url: string | null
+          name: string
+          sector: string | null
+          ticker: string
+          year_founded: number | null
+        }
+        Insert: {
+          cik?: number | null
+          company_id: number
+          created_at?: string
+          description?: string | null
+          exchange?: string | null
+          logo_url?: string | null
+          name: string
+          sector?: string | null
+          ticker: string
+          year_founded?: number | null
+        }
+        Update: {
+          cik?: number | null
+          company_id?: number
+          created_at?: string
+          description?: string | null
+          exchange?: string | null
+          logo_url?: string | null
+          name?: string
+          sector?: string | null
+          ticker?: string
+          year_founded?: number | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
