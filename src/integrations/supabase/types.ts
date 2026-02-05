@@ -134,6 +134,48 @@ export type Database = {
         }
         Relationships: []
       }
+      excel_processing_runs: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          data_sources_used: string[] | null
+          error_message: string | null
+          files_updated: number | null
+          id: string
+          report_date: string
+          started_at: string | null
+          status: string
+          ticker: string
+          timing: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          data_sources_used?: string[] | null
+          error_message?: string | null
+          files_updated?: number | null
+          id?: string
+          report_date: string
+          started_at?: string | null
+          status?: string
+          ticker: string
+          timing: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          data_sources_used?: string[] | null
+          error_message?: string | null
+          files_updated?: number | null
+          id?: string
+          report_date?: string
+          started_at?: string | null
+          status?: string
+          ticker?: string
+          timing?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

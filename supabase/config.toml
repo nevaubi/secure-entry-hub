@@ -5,3 +5,9 @@ project_id = "wbwyumlaiwnqetqavnph"
  
  [functions.process-earnings-files]
  verify_jwt = false
+ 
+ [functions.trigger-excel-agent]
+ verify_jwt = false
+ 
+ [functions.excel-agent-callback]
+ verify_jwt = false
