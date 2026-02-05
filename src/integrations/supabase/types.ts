@@ -53,6 +53,48 @@ export type Database = {
         }
         Relationships: []
       }
+      earnings_calendar: {
+        Row: {
+          actual_eps: number | null
+          before_after_market: string | null
+          created_at: string
+          difference: number | null
+          estimate_eps: number | null
+          fetched_at: string
+          fiscal_period_end: string | null
+          id: string
+          percent_surprise: number | null
+          report_date: string
+          ticker: string
+        }
+        Insert: {
+          actual_eps?: number | null
+          before_after_market?: string | null
+          created_at?: string
+          difference?: number | null
+          estimate_eps?: number | null
+          fetched_at?: string
+          fiscal_period_end?: string | null
+          id?: string
+          percent_surprise?: number | null
+          report_date: string
+          ticker: string
+        }
+        Update: {
+          actual_eps?: number | null
+          before_after_market?: string | null
+          created_at?: string
+          difference?: number | null
+          estimate_eps?: number | null
+          fetched_at?: string
+          fiscal_period_end?: string | null
+          id?: string
+          percent_surprise?: number | null
+          report_date?: string
+          ticker?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

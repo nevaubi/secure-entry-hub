@@ -1,1 +1,4 @@
 project_id = "wbwyumlaiwnqetqavnph"
+ 
+ [functions.fetch-earnings-calendar]
+ verify_jwt = false
