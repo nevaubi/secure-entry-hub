@@ -2,3 +2,6 @@ project_id = "wbwyumlaiwnqetqavnph"
  
  [functions.fetch-earnings-calendar]
  verify_jwt = false
+ 
+ [functions.process-earnings-files]
+ verify_jwt = false
