@@ -7,14 +7,14 @@
  import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
  import { useToast } from '@/hooks/use-toast';
  
- type AuthMode = 'signin' | 'signup' | 'reset';
+ type AuthMode = 'signin' | 'reset';
  
  const Login = () => {
    const [mode, setMode] = useState<AuthMode>('signin');
    const [email, setEmail] = useState('');
    const [password, setPassword] = useState('');
    const [loading, setLoading] = useState(false);
-   const { signIn, signUp, resetPassword } = useAuth();
+   const { signIn, resetPassword } = useAuth();
    const navigate = useNavigate();
    const { toast } = useToast();
  
@@ -31,13 +31,6 @@
            description: 'We sent you a password reset link.',
          });
          setMode('signin');
-       } else if (mode === 'signup') {
-         const { error } = await signUp(email, password);
-         if (error) throw error;
-         toast({
-           title: 'Check your email',
-           description: 'We sent you a confirmation link to verify your account.',
-         });
        } else {
          const { error } = await signIn(email, password);
          if (error) throw error;
@@ -56,19 +49,13 @@
    };
  
    const getTitle = () => {
-     switch (mode) {
-       case 'signup': return 'Create account';
-       case 'reset': return 'Reset password';
-       default: return 'Sign in';
-     }
+     return mode === 'reset' ? 'Reset password' : 'Sign in';
    };
  
    const getDescription = () => {
-     switch (mode) {
-       case 'signup': return 'Enter your email to create an account';
-       case 'reset': return 'Enter your email to receive a reset link';
-       default: return 'Enter your credentials to access your account';
-     }
+     return mode === 'reset' 
+       ? 'Enter your email to receive a reset link' 
+       : 'Enter your credentials to access your account';
    };
  
    return (
@@ -120,38 +107,13 @@
  
            <div className="mt-4 space-y-2 text-center text-sm">
              {mode === 'signin' && (
-               <>
-                 <button
-                   type="button"
-                   onClick={() => setMode('reset')}
-                   className="text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
-                 >
-                   Forgot password?
-                 </button>
-                 <div className="text-muted-foreground">
-                   Don't have an account?{' '}
-                   <button
-                     type="button"
-                     onClick={() => setMode('signup')}
-                     className="text-foreground hover:underline underline-offset-4"
-                   >
-                     Sign up
-                   </button>
-                 </div>
-               </>
-             )}
-             
-             {mode === 'signup' && (
-               <div className="text-muted-foreground">
-                 Already have an account?{' '}
-                 <button
-                   type="button"
-                   onClick={() => setMode('signin')}
-                   className="text-foreground hover:underline underline-offset-4"
-                 >
-                   Sign in
-                 </button>
-               </div>
+               <button
+                 type="button"
+                 onClick={() => setMode('reset')}
+                 className="text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
+               >
+                 Forgot password?
+               </button>
              )}
              
              {mode === 'reset' && (
