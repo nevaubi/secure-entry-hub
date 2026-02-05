@@ -8,6 +8,7 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
+ import ImportCompanies from "./pages/ImportCompanies";
 
 const queryClient = new QueryClient();
 
@@ -21,6 +22,7 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Login />} />
             <Route path="/login" element={<Login />} />
+             <Route path="/import-companies" element={<ImportCompanies />} />
             <Route
               path="/dashboard"
               element={
