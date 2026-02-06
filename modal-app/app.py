@@ -23,10 +23,11 @@
  image = (
      modal.Image.debian_slim(python_version="3.11")
      .pip_install(
-         "anthropic>=0.40.0",
-         "openpyxl>=3.1.2", 
-         "playwright>=1.40.0",
-         "httpx>=0.27.0",
+          "anthropic>=0.40.0",
+          "openpyxl>=3.1.2", 
+          "playwright>=1.40.0",
+          "httpx>=0.27.0",
+          "fastapi[standard]>=0.115.0",
      )
      .run_commands("playwright install chromium", "playwright install-deps chromium")
  )
@@ -114,7 +115,7 @@
  
  
  @app.function(image=image, secrets=secrets, timeout=60)
- @modal.web_endpoint(method="POST")
+ @modal.fastapi_endpoint(method="POST")
  def webhook(data: dict) -> dict:
      """
      Webhook endpoint called by Lovable's trigger-excel-agent function.
