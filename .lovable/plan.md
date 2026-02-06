@@ -1,33 +1,32 @@
 
 
-## Fix: Remove Extra Leading Space from Every Line
+## Configure Modal Webhook URL
 
-The problem is that **every line in `modal-app/app.py` has one extra leading space**. For example:
+Store the Modal webhook URL (`https://admin-84170--excel-agent-webhook.modal.run`) as a backend secret so the `trigger-excel-agent` edge function can automatically use it.
 
-- Line 1 starts with ` """` instead of `"""`
-- Line 15 starts with ` import modal` instead of `import modal`
-- Line 20 starts with ` app = modal.App(...)` instead of `app = modal.App(...)`
+### What will happen
 
-Python requires top-level statements (imports, class/function definitions, variable assignments) to start at column 0 with no leading whitespace. Right now, everything is shifted one space to the right, causing indentation errors throughout the file.
+1. **Add a new secret** called `MODAL_WEBHOOK_URL` with value `https://admin-84170--excel-agent-webhook.modal.run`
+2. No code changes are needed -- the `trigger-excel-agent` function already reads `MODAL_WEBHOOK_URL` from the environment on line 120:
+   ```typescript
+   const endpoint = modal_endpoint || Deno.env.get('MODAL_WEBHOOK_URL');
+   ```
 
-### What will change
+### How it works after configuration
 
-**File: `modal-app/app.py`**
+- When the function is called (either manually or on schedule), it will:
+  1. Query the `earnings_calendar` table for today's tickers
+  2. Create `excel_processing_runs` records with `pending` status
+  3. Call the Modal webhook at your URL with the ticker list
+  4. Modal processes each ticker and calls back via `excel-agent-callback` to update status
 
-Remove exactly one leading space from every line in the file. This is a whitespace-only change — no logic or content changes. After the fix:
+### Testing
 
-- Top-level code (imports, `app = ...`, `image = ...`, function decorators) will start at column 0
-- Function body code will use standard 4-space indentation
-- Nested blocks will use 8-space, 12-space, etc. as expected
+After the secret is added, we can test the full pipeline by calling the `trigger-excel-agent` function directly to verify the connection between your backend and Modal is working.
 
-### After the fix
+### Technical Details
 
-Re-run:
-
-```
-cd modal-app
-modal deploy app.py
-```
-
-It should deploy without any indentation errors.
-
+- **Secret name**: `MODAL_WEBHOOK_URL`
+- **Secret value**: `https://admin-84170--excel-agent-webhook.modal.run`
+- **Used by**: `supabase/functions/trigger-excel-agent/index.ts` (line 120)
+- **No file changes required** -- only a secret needs to be added
