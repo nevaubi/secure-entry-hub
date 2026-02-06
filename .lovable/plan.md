@@ -1,36 +1,33 @@
 
 
-## Fix Indentation in modal-app/app.py
+## Fix: Remove Extra Leading Space from Every Line
 
-The `.pip_install()` arguments (lines 26-30) have 5-space indentation (an extra space) instead of the standard 4-space indentation used throughout the rest of the file.
+The problem is that **every line in `modal-app/app.py` has one extra leading space**. For example:
 
-### Change
+- Line 1 starts with ` """` instead of `"""`
+- Line 15 starts with ` import modal` instead of `import modal`
+- Line 20 starts with ` app = modal.App(...)` instead of `app = modal.App(...)`
 
-**File: `modal-app/app.py` (lines 25-31)**
+Python requires top-level statements (imports, class/function definitions, variable assignments) to start at column 0 with no leading whitespace. Right now, everything is shifted one space to the right, causing indentation errors throughout the file.
 
-Replace the current indentation:
+### What will change
 
-```python
-    .pip_install(
-         "anthropic>=0.40.0",
-         "openpyxl>=3.1.2", 
-         "playwright>=1.40.0",
-         "httpx>=0.27.0",
-         "fastapi[standard]>=0.115.0",
-    )
+**File: `modal-app/app.py`**
+
+Remove exactly one leading space from every line in the file. This is a whitespace-only change — no logic or content changes. After the fix:
+
+- Top-level code (imports, `app = ...`, `image = ...`, function decorators) will start at column 0
+- Function body code will use standard 4-space indentation
+- Nested blocks will use 8-space, 12-space, etc. as expected
+
+### After the fix
+
+Re-run:
+
+```
+cd modal-app
+modal deploy app.py
 ```
 
-With correct 4-space (8-space from margin) indentation:
-
-```python
-    .pip_install(
-        "anthropic>=0.40.0",
-        "openpyxl>=3.1.2",
-        "playwright>=1.40.0",
-        "httpx>=0.27.0",
-        "fastapi[standard]>=0.115.0",
-    )
-```
-
-This is a one-line-per-argument fix — just removing the extra leading space on each string argument. After this, re-run `modal deploy app.py`.
+It should deploy without any indentation errors.
 
