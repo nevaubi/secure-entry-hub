@@ -1,49 +1,47 @@
 
 
-## Fix: Replace deprecated `modal.Mount` with `image.add_local_dir()`
+## Fix: Module path issue with `add_local_dir`
 
 ### Root Cause
 
-Your installed version of the Modal SDK no longer includes `modal.Mount` — it was deprecated and removed in recent versions. The modern way to include local directories is to use `.add_local_dir()` on the image definition.
+The `agent/` directory is mounted at `/root/agent` using `add_local_dir("agent", remote_path="/root/agent")`. However, Python needs `/root` to be on `sys.path` for `from agent.orchestrator import run_agent` and the relative imports (`from .browser import ...`) to work.
+
+The `add_local_dir` method copies files but doesn't guarantee the parent directory is on Python's module search path. Modal's working directory and `sys.path` may not include `/root`.
+
+### Fix
+
+Change the remote path to place the `agent` directory somewhere that **is** on Python's default `sys.path` — or explicitly add `/root` to `sys.path` before importing.
+
+The simplest and most reliable approach: copy the `agent` directory into the **app's working directory** by using `remote_path="/root/agent"` but also adding a `sys.path` fix, **or** (better) change the remote path to a location already on `sys.path`.
+
+**Recommended approach:** Use `copy_local_dir` instead, or change the remote path to sit under a known Python path. The cleanest solution is to add `sys.path.insert(0, "/root")` before the import in `process_ticker`.
 
 ### What changes
 
 **File: `modal-app/app.py`**
 
-1. Remove the `agent_mount` line entirely (line 44-45)
-2. Add `.add_local_dir("agent", remote_path="/root/agent")` to the image definition chain (after `.run_commands(...)`)
-3. Remove `mounts=[agent_mount]` from both `@app.function` decorators, reverting them back to their original form
+In the `process_ticker` function (around line 65-66), add a `sys.path` fix before the import:
 
-**Before:**
 ```python
-image = (
-    modal.Image.debian_slim(python_version="3.11")
-    .pip_install(...)
-    .run_commands("playwright install chromium", "playwright install-deps chromium")
-)
+# Before:
+import httpx
+from agent.orchestrator import run_agent
 
-agent_mount = modal.Mount.from_local_dir("agent", remote_path="/root/agent")
-
-@app.function(image=image, secrets=secrets, timeout=600, mounts=[agent_mount])
+# After:
+import sys
+sys.path.insert(0, "/root")
+import httpx
+from agent.orchestrator import run_agent
 ```
 
-**After:**
-```python
-image = (
-    modal.Image.debian_slim(python_version="3.11")
-    .pip_install(...)
-    .run_commands("playwright install chromium", "playwright install-deps chromium")
-    .add_local_dir("agent", remote_path="/root/agent")
-)
+Apply the same fix in the `webhook` function if it also imports from `agent`.
 
-@app.function(image=image, secrets=secrets, timeout=600)
-```
+This ensures that when Python tries to resolve `agent.orchestrator`, it looks in `/root/` and finds `/root/agent/orchestrator.py`, which then correctly resolves the relative imports (`from .browser`, `from .storage`, etc.) within the `agent` package.
 
 ### Files modified
 
 | File | Change |
 |---|---|
-| `modal-app/app.py` | Move local dir into image definition, remove Mount references |
+| `modal-app/app.py` | Add `sys.path.insert(0, "/root")` before `from agent.orchestrator import run_agent` in both `process_ticker` and `webhook` functions |
 
-After this change, redeploy with `modal deploy app.py` and re-test.
-
+After this change, redeploy with `modal deploy app.py` and re-test with `modal run app.py::test_single_ticker --ticker PLTR`.
