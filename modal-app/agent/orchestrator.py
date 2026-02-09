@@ -294,6 +294,9 @@ class AgentContext:
         # Track which file is currently being processed
         self.current_file: str | None = None
 
+        # Fiscal period end date (forced for date headers)
+        self.fiscal_period_end: str | None = None
+
         # Persistent browser (initialized lazily on first browse call)
         self.browser: StockAnalysisBrowser | None = None
 
@@ -448,9 +451,12 @@ def handle_tool_call(context: AgentContext, tool_name: str, tool_input: dict) ->
         if not updater:
             return json.dumps({"error": f"Cannot open file {bucket_name}"})
 
+        # Force the correct fiscal_period_end date as date_header
+        correct_date = context.fiscal_period_end or tool_input["date_header"]
+
         result = updater.insert_new_period_column(
             tool_input["sheet_name"],
-            tool_input["date_header"],
+            correct_date,
             tool_input["period_header"]
         )
 
@@ -549,6 +555,7 @@ def run_agent(ticker: str, report_date: str, timing: str, fiscal_period_end: str
 
         # Initialize agent context
         context = AgentContext(ticker, work_dir, files)
+        context.fiscal_period_end = fiscal_period_end
         start_time = time.time()
         total_iterations = 0
         files_updated = 0
