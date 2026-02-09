@@ -53,7 +53,7 @@ class StorageClient:
         Returns:
             True if successful, False otherwise
         """
-        url = f"{self.supabase_url}/storage/v1/object/{bucket}/{file_path}"
+        url = f"{self.supabase_url}/storage/v1/object/public/{bucket}/{file_path}"
 
         try:
             with httpx.Client() as client:
