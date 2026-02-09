@@ -2,7 +2,7 @@
 Agent orchestrator using Anthropic Claude.
 
 Coordinates the agentic workflow:
-1. Process Excel files one at a time (12 sequential sub-runs)
+1. Process Excel files one at a time (6 sequential sub-runs)
 2. Inject full cell data for only the current file
 3. Browse StockAnalysis.com (persistent browser session)
 4. Extract data via Gemini vision
@@ -28,12 +28,6 @@ from .updater import ExcelUpdater
 
 # Ordered list of files to process sequentially
 FILE_ORDER = [
-    "standardized-annual-income",
-    "standardized-annual-balance",
-    "standardized-annual-cashflow",
-    "standardized-quarterly-income",
-    "standardized-quarterly-balance",
-    "standardized-quarterly-cashflow",
     "financials-annual-income",
     "financials-annual-balance",
     "financials-annual-cashflow",
@@ -44,12 +38,6 @@ FILE_ORDER = [
 
 # Maps file names to browse_stockanalysis parameters
 FILE_TO_BROWSE_PARAMS = {
-    "standardized-annual-income": {"statement_type": "income", "period": "annual", "data_type": "standardized"},
-    "standardized-annual-balance": {"statement_type": "balance", "period": "annual", "data_type": "standardized"},
-    "standardized-annual-cashflow": {"statement_type": "cashflow", "period": "annual", "data_type": "standardized"},
-    "standardized-quarterly-income": {"statement_type": "income", "period": "quarterly", "data_type": "standardized"},
-    "standardized-quarterly-balance": {"statement_type": "balance", "period": "quarterly", "data_type": "standardized"},
-    "standardized-quarterly-cashflow": {"statement_type": "cashflow", "period": "quarterly", "data_type": "standardized"},
     "financials-annual-income": {"statement_type": "income", "period": "annual", "data_type": "as-reported"},
     "financials-annual-balance": {"statement_type": "balance", "period": "annual", "data_type": "as-reported"},
     "financials-annual-cashflow": {"statement_type": "cashflow", "period": "annual", "data_type": "as-reported"},
@@ -78,7 +66,7 @@ TOOLS = [
                 },
                 "data_type": {
                     "type": "string",
-                    "enum": ["standardized", "as-reported"],
+                    "enum": ["as-reported"],
                     "description": "Whether to view standardized or as-reported data"
                 }
             },
@@ -261,7 +249,7 @@ WORKFLOW:
 IMPORTANT — FOR NEW COLUMN INSERTION:
 - After inserting the column, you get a row_map with exact cell references and labels
 - Browse StockAnalysis FIRST, extract data, then batch-fill all cells that correctly match the corresponding row label via the StockAnalysis data, use your professional judgement
-- Utilize the web_search for the remaining required row labels, sometimes row labels will not match perfectly (for Standardized) use your best accurate judgement.
+- Utilize the web_search for the remaining required row labels, sometimes row labels will not match perfectly, use your best accurate judgement.
 - You can optionally use web_search for a quick sanity check for validation if required, but do not call it excessively, if you have the required correct data values to fill the column B for the current respective file, then utilize update_excel_cell to insert the values and complete, do not alter any other column data ONLY the new Column B
 - Accuracy is critical: you have limited iterations, 15 max, so fill cells efficiently
 - ALWAYS REMEMBER to use update_excel_cell when finished gathering the required data to ensure you actually fill in the respective column B cells before finishing
