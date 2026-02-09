@@ -1,47 +1,45 @@
 
 
-## Fix: Module path issue with `add_local_dir`
+## Fix: Mount agent to a Python-native path (no more sys.path hacks)
 
-### Root Cause
+### Why it keeps failing
 
-The `agent/` directory is mounted at `/root/agent` using `add_local_dir("agent", remote_path="/root/agent")`. However, Python needs `/root` to be on `sys.path` for `from agent.orchestrator import run_agent` and the relative imports (`from .browser import ...`) to work.
+The `sys.path.insert(0, "/root")` fix only takes effect at runtime inside the function body. But `add_local_dir` places files during image build, and Python's default `sys.path` in Modal's Debian slim image does NOT include `/root`. The error persists because the module resolution still can't find the package.
 
-The `add_local_dir` method copies files but doesn't guarantee the parent directory is on Python's module search path. Modal's working directory and `sys.path` may not include `/root`.
+### The real fix
 
-### Fix
-
-Change the remote path to place the `agent` directory somewhere that **is** on Python's default `sys.path` — or explicitly add `/root` to `sys.path` before importing.
-
-The simplest and most reliable approach: copy the `agent` directory into the **app's working directory** by using `remote_path="/root/agent"` but also adding a `sys.path` fix, **or** (better) change the remote path to a location already on `sys.path`.
-
-**Recommended approach:** Use `copy_local_dir` instead, or change the remote path to sit under a known Python path. The cleanest solution is to add `sys.path.insert(0, "/root")` before the import in `process_ticker`.
+Instead of fighting `sys.path`, mount the `agent/` directory directly into Python's `site-packages` where it will be found automatically -- no path manipulation needed.
 
 ### What changes
 
 **File: `modal-app/app.py`**
 
-In the `process_ticker` function (around line 65-66), add a `sys.path` fix before the import:
+1. Change the `add_local_dir` remote path from `/root/agent` to Python's site-packages:
 
 ```python
 # Before:
-import httpx
-from agent.orchestrator import run_agent
+.add_local_dir("agent", remote_path="/root/agent")
 
 # After:
-import sys
-sys.path.insert(0, "/root")
-import httpx
-from agent.orchestrator import run_agent
+.add_local_dir("agent", remote_path="/usr/local/lib/python3.11/site-packages/agent")
 ```
 
-Apply the same fix in the `webhook` function if it also imports from `agent`.
+2. Remove the `sys.path` hack from `process_ticker` (lines 65-66):
 
-This ensures that when Python tries to resolve `agent.orchestrator`, it looks in `/root/` and finds `/root/agent/orchestrator.py`, which then correctly resolves the relative imports (`from .browser`, `from .storage`, etc.) within the `agent` package.
+```python
+# Remove these two lines:
+import sys
+sys.path.insert(0, "/root")
+```
+
+### Why this works
+
+Python's `site-packages` is always on `sys.path` by default. By placing the `agent/` directory there, `from agent.orchestrator import run_agent` and all relative imports (`from .browser import ...`) work immediately with zero path manipulation.
 
 ### Files modified
 
 | File | Change |
 |---|---|
-| `modal-app/app.py` | Add `sys.path.insert(0, "/root")` before `from agent.orchestrator import run_agent` in both `process_ticker` and `webhook` functions |
+| `modal-app/app.py` | Change `remote_path` to site-packages, remove `sys.path` hack |
 
 After this change, redeploy with `modal deploy app.py` and re-test with `modal run app.py::test_single_ticker --ticker PLTR`.
