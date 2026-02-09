@@ -1,32 +1,49 @@
 
 
-## Fix: `ModuleNotFoundError: No module named 'agent'`
+## Fix: Replace deprecated `modal.Mount` with `image.add_local_dir()`
 
 ### Root Cause
 
-Modal only auto-mounts the single entry file (`app.py`). The `agent/` subdirectory (containing `orchestrator.py`, `browser.py`, etc.) is **not being uploaded** to the Modal container, so Python cannot import it.
+Your installed version of the Modal SDK no longer includes `modal.Mount` — it was deprecated and removed in recent versions. The modern way to include local directories is to use `.add_local_dir()` on the image definition.
 
-### Fix
-
-Add a `modal.Mount` to the `@app.function` decorator in `modal-app/app.py` that includes the `agent/` package.
-
-### Technical Details
+### What changes
 
 **File: `modal-app/app.py`**
 
-1. Add a mount definition after the secrets list (around line 42):
+1. Remove the `agent_mount` line entirely (line 44-45)
+2. Add `.add_local_dir("agent", remote_path="/root/agent")` to the image definition chain (after `.run_commands(...)`)
+3. Remove `mounts=[agent_mount]` from both `@app.function` decorators, reverting them back to their original form
 
+**Before:**
 ```python
-# Mount the agent package so it's available in the container
+image = (
+    modal.Image.debian_slim(python_version="3.11")
+    .pip_install(...)
+    .run_commands("playwright install chromium", "playwright install-deps chromium")
+)
+
 agent_mount = modal.Mount.from_local_dir("agent", remote_path="/root/agent")
-```
 
-2. Update the `@app.function` decorator on line 45 to include the mount:
-
-```python
 @app.function(image=image, secrets=secrets, timeout=600, mounts=[agent_mount])
 ```
 
-3. Apply the same mount to **any other `@app.function`** that imports from `agent` (check `test_single_ticker` and `webhook` if they also call `process_ticker`).
+**After:**
+```python
+image = (
+    modal.Image.debian_slim(python_version="3.11")
+    .pip_install(...)
+    .run_commands("playwright install chromium", "playwright install-deps chromium")
+    .add_local_dir("agent", remote_path="/root/agent")
+)
 
-After this change, redeploy with `modal deploy app.py` and re-run the test.
+@app.function(image=image, secrets=secrets, timeout=600)
+```
+
+### Files modified
+
+| File | Change |
+|---|---|
+| `modal-app/app.py` | Move local dir into image definition, remove Mount references |
+
+After this change, redeploy with `modal deploy app.py` and re-test.
+
