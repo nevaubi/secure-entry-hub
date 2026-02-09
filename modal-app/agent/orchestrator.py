@@ -267,6 +267,9 @@ FOR FILLING EXISTING EMPTY CELLS (no insertion):
 
 CRITICAL RULES:
 - When inserting a new column, ONLY fill rows listed in the row_map
+- When a new column is being inserted, IGNORE all empty cells in columns C, D, E, etc.
+  Your ONLY job is to fill the NEW column B with the latest period's data.
+  Do NOT research or fill historical data from older periods.
 - When filling empty cells (no insertion), NEVER modify cells that already contain values
 - All numeric values must be fully written out (e.g., 394328000000 not 394.33B)
 - Match row labels and column headers carefully to the correct fiscal periods
@@ -622,7 +625,10 @@ def run_agent(ticker: str, report_date: str, timing: str) -> dict[str, Any]:
                 )
 
                 # Fresh message history for each file
-                messages = [{"role": "user", "content": f"Begin processing {file_name} for {ticker}. Report date: {report_date}, timing: {timing}.\n\nCOMPLETE FILE DATA:\n{full_schema}\n\nEMPTY CELLS NEEDING DATA ({len(empty_cells)} total):\n{', '.join(empty_cells) if empty_cells else 'None'}"}]
+                if needs_new_column:
+                    messages = [{"role": "user", "content": f"Begin processing {file_name} for {ticker}. Report date: {report_date}, timing: {timing}.\n\nCOMPLETE FILE DATA:\n{full_schema}\n\nA NEW COLUMN INSERTION IS REQUIRED. Focus ONLY on the newest period.\nDo NOT fill old/historical empty cells. Only fill column B after insertion.\nIgnore any empty cells in columns C, D, E, etc. — they are from older periods and not your concern."}]
+                else:
+                    messages = [{"role": "user", "content": f"Begin processing {file_name} for {ticker}. Report date: {report_date}, timing: {timing}.\n\nCOMPLETE FILE DATA:\n{full_schema}\n\nEMPTY CELLS NEEDING DATA ({len(empty_cells)} total):\n{', '.join(empty_cells) if empty_cells else 'None'}"}]
 
                 # Sub-loop: 15 iterations for files needing column insertion, 10 otherwise
                 max_file_iterations = 15 if needs_new_column else 10
