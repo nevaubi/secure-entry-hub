@@ -222,15 +222,15 @@ def build_file_system_prompt(
 NEW COLUMN INSERTION REQUIRED:
 - The fiscal_period_end ({target_date}) is NEWER than the current leftmost date column ({leftmost_date} / {leftmost_period})
 - You MUST call insert_new_period_column FIRST to create a new column B
-- Use fiscal_period_end ({target_date}) as the date_header and determine the correct fiscal period label
-- After insertion, fill the new column B cells for all rows that had data in the previous columns
+- Use fiscal_period_end ({target_date}) as the date_header and determine the correct fiscal period label (for all annual data, use Q4 YYYY instead of FY YYYY in the column header for the fiscal label)
+- After insertion, fill only the new column B cells for all rows that had data in the previous columns. Do not guess or hallucinate, and do not insert or modify any other data other than only the newly created column B
 - The rows needing data are: {rows_preview}
 """
     elif leftmost_date:
         new_column_section = f"""
 CURRENT LEFTMOST COLUMN: {leftmost_date} / {leftmost_period}
 - The fiscal_period_end ({target_date}) matches or is older than the leftmost column
-- No new column insertion needed — just fill any empty cells
+- No new column insertion needed
 """
 
     prompt = f"""You are a financial data agent. You are processing file {file_index}/{total_files} for ticker {ticker}.
@@ -249,7 +249,7 @@ Call browse_stockanalysis with these exact parameters to get the data.
 WORKFLOW:
 1. Check if a new column needs to be inserted:
    - If the NEW COLUMN INSERTION REQUIRED section appears above, you MUST call insert_new_period_column FIRST
-   - Determine the correct date_header (use fiscal_period_end: {target_date}) and period_header (e.g. "Q4 2026" for quarterly, "FY 2026" for annual)
+   - Determine the correct date_header (use fiscal_period_end: {target_date}) and period_header (e.g. "Q3 2026" for quarterly, "Q4 2026" for annual)
    - After insertion, the tool returns a row_map telling you exactly which cells to fill (e.g. B3=Total Assets, B4=Current Assets...)
 2. If no new column is needed and there are no empty cells, respond with "FILE COMPLETE"
 3. Call browse_stockanalysis with the parameters above to navigate to the matching page
@@ -260,14 +260,15 @@ WORKFLOW:
 
 IMPORTANT — FOR NEW COLUMN INSERTION:
 - After inserting the column, you get a row_map with exact cell references and labels
-- Browse StockAnalysis ONCE, extract data ONCE, then batch-fill all cells
-- Do NOT waste iterations on dual-source validation — use StockAnalysis as the primary source
-- You can optionally use web_search for a quick sanity check but it is NOT required for insertion
-- Speed is critical: you have limited iterations, so fill cells efficiently
+- Browse StockAnalysis FIRST, extract data, then batch-fill all cells that correctly match the corresponding row label via the StockAnalysis data, use your professional judgement
+- Utilize the web_search for the remaining required row labels, sometimes row labels will not match perfectly (for Standardized) use your best accurate judgement.
+- You can optionally use web_search for a quick sanity check for validation if required, but do not call it excessively, if you have the required correct data values to fill the column B for the current respective file, then utilize update_excel_cell to insert the values and complete, do not alter any other column data ONLY the new Column B
+- Accuracy is critical: you have limited iterations, 15 max, so fill cells efficiently
+- ALWAYS REMEMBER to use update_excel_cell when finished gathering the required data to ensure you actually fill in the respective column B cells before finishing
 
 FOR FILLING EXISTING EMPTY CELLS (no insertion):
-- Use dual-source validation: gather from StockAnalysis AND Perplexity web_search
-- If both sources agree, use the value; if they disagree, investigate or leave empty
+- Use dual-source validation: gather from StockAnalysis AND Perplexity web_search as needed
+- If both sources agree, use the value; if they disagree, investigate or leave empty, use your best judgement
 
 CRITICAL RULES:
 - When inserting a new column, ONLY fill rows listed in the row_map
@@ -277,7 +278,7 @@ CRITICAL RULES:
 - After gathering financial data, you MUST call update_excel_cell for every target row.
   Do NOT stop after browsing or extracting — the file is not complete until cells are written.
   Always use fully written-out absolute numbers (e.g., 394328000000 not 394.3B).
-  Carefully match each value to its corresponding row label before writing.
+  Carefully match each value to its corresponding row label before writing, use your best judgement for potentially slightly .
 - When filling empty cells (no insertion), NEVER modify cells that already contain values
 - All numeric values must be fully written out (e.g., 394328000000 not 394.33B)
 - Match row labels and column headers carefully to the correct fiscal periods
