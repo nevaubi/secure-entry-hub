@@ -237,7 +237,7 @@ Call browse_stockanalysis with these exact parameters to get the data.
 WORKFLOW:
 1. Check if a new column needs to be inserted:
    - If the NEW COLUMN INSERTION REQUIRED section appears above, you MUST call insert_new_period_column FIRST
-   - Determine the correct date_header (use fiscal_period_end: {target_date}) and period_header (e.g. "Q3 2026" for quarterly, "Q4 2026" for annual)
+   - Use the date from the FIRST data column (leftmost) of the Gemini-extracted markdown table as your date_header. For annual files, ALWAYS use "Q4 YYYY" as the period_header. For quarterly files, use the specific quarter (e.g. "Q1 2026", "Q2 2026").
    - After insertion, the tool returns a row_map telling you exactly which cells to fill (e.g. B3=Total Assets, B4=Current Assets...)
 2. If no new column is needed and there are no empty cells, respond with "FILE COMPLETE"
 3. Call browse_stockanalysis with the parameters above to navigate to the matching page
@@ -251,7 +251,7 @@ IMPORTANT — FOR NEW COLUMN INSERTION:
 - Browse StockAnalysis FIRST, extract data, then batch-fill all cells that correctly match the corresponding row label via the StockAnalysis data, use your professional judgement
 - Utilize the web_search for the remaining required row labels, sometimes row labels will not match perfectly, use your best accurate judgement.
 - You can optionally use web_search for a quick sanity check for validation if required, but do not call it excessively, if you have the required correct data values to fill the column B for the current respective file, then utilize update_excel_cell to insert the values and complete, do not alter any other column data ONLY the new Column B
-- Accuracy is critical: you have limited iterations, 15 max, so fill cells efficiently
+- Accuracy is critical: you have ONLY 5 iterations max, so you MUST be efficient — browse, extract, and batch-write all cells quickly
 - ALWAYS REMEMBER to use update_excel_cell when finished gathering the required data to ensure you actually fill in the respective column B cells before finishing
 
 FOR FILLING EXISTING EMPTY CELLS (no insertion):
@@ -374,13 +374,31 @@ def handle_tool_call(context: AgentContext, tool_name: str, tool_input: dict) ->
             img_b64 = base64.b64encode(context.latest_screenshot).decode("utf-8")
 
             response = httpx.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}",
+                f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key={gemini_key}",
                 headers={"Content-Type": "application/json"},
                 json={
                     "contents": [
                         {
                             "parts": [
-                                {"text": instruction},
+                                {"text": """You are a financial data extraction specialist. Analyze this screenshot of a financial statement table.
+
+TASK: Extract ONLY the first 4 columns from the LEFT side of the table. Start from the leftmost column (row labels) and include the next 3 data columns to the right.
+
+OUTPUT FORMAT: A markdown table with:
+- Row 1: Column headers exactly as shown (dates or period labels)
+- All subsequent rows: Row labels in column 1, numeric values in columns 2-4
+- Reproduce ALL numeric values EXACTLY as displayed (do not round, convert, or abbreviate)
+- Reproduce ALL row labels EXACTLY as displayed
+- Reproduce ALL column headers/dates EXACTLY as displayed
+- If a cell is empty or shows a dash, use an empty cell in the markdown
+
+CRITICAL ACCURACY RULES:
+- Do NOT guess or infer any values — only extract what is visually present
+- Do NOT skip any rows — include every row visible in the table
+- Preserve the exact formatting of numbers (commas, parentheses for negatives, etc.)
+- The column headers typically contain dates (e.g., "12/31/2025") or period labels (e.g., "Q4 2025") — reproduce them exactly
+
+Return ONLY the markdown table, nothing else."""},
                                 {
                                     "inline_data": {
                                         "mime_type": "image/png",
@@ -451,12 +469,10 @@ def handle_tool_call(context: AgentContext, tool_name: str, tool_input: dict) ->
         if not updater:
             return json.dumps({"error": f"Cannot open file {bucket_name}"})
 
-        # Force the correct fiscal_period_end date as date_header
-        correct_date = context.fiscal_period_end or tool_input["date_header"]
-
+        # Let the agent determine the date from the Gemini-extracted markdown table
         result = updater.insert_new_period_column(
             tool_input["sheet_name"],
-            correct_date,
+            tool_input["date_header"],
             tool_input["period_header"]
         )
 
@@ -632,12 +648,12 @@ def run_agent(ticker: str, report_date: str, timing: str, fiscal_period_end: str
 
                 # Fresh message history for each file
                 if needs_new_column:
-                    messages = [{"role": "user", "content": f"Begin processing {file_name} for {ticker}. Report date: {report_date}, fiscal_period_end: {target_date}, timing: {timing}.\n\nCOMPLETE FILE DATA:\n{full_schema}\n\nA NEW COLUMN INSERTION IS REQUIRED. The date_header for the new column must be the fiscal_period_end: {target_date} (NOT the report_date).\nFocus ONLY on the newest period.\nDo NOT fill old/historical empty cells. Only fill column B after insertion.\nIgnore any empty cells in columns C, D, E, etc. — they are from older periods and not your concern.\n\nOnce you have gathered the financial values, you MUST call update_excel_cell for EVERY data row in column B.\nUse FULL absolute numbers (e.g., 394328000000 not 394.3B or 394,328).\nMatch each value to the correct row label carefully before inserting.\nDo NOT stop after extracting data — the job is not done until every cell is written."}]
+                    messages = [{"role": "user", "content": f"Begin processing {file_name} for {ticker}. Report date: {report_date}, fiscal_period_end: {target_date}, timing: {timing}.\n\nCOMPLETE FILE DATA:\n{full_schema}\n\nA NEW COLUMN INSERTION IS REQUIRED.\n\nIMPORTANT — DATE AND PERIOD HEADERS:\n- Do NOT use fiscal_period_end or report_date for the column header.\n- Instead, FIRST call browse_stockanalysis, THEN call extract_page_with_vision.\n- The Gemini vision result will return a markdown table. Use the DATE from the FIRST data column (leftmost after row labels) of that markdown table as your date_header.\n- For annual files, ALWAYS use 'Q4 YYYY' as the period_header. For quarterly files, use the specific quarter (e.g. 'Q1 2026').\n- The Gemini markdown table is your PRIMARY data source. Use web_search only for validation or missing values.\n\nYou have ONLY 5 iterations. Be efficient:\n1. Browse + extract in iteration 1\n2. Insert column with correct date/period from the markdown table\n3. Batch-write ALL cells using data from the markdown table\n4. Use web_search only if needed for gaps\n5. Finish\n\nFocus ONLY on the newest period column B after insertion.\nDo NOT fill old/historical empty cells. Ignore columns C, D, E, etc.\nUse FULL absolute numbers (e.g., 394328000000 not 394.3B or 394,328).\nMatch each value to the correct row label carefully before inserting.\nDo NOT stop after extracting data — the job is not done until every cell is written."}]
                 else:
                     messages = [{"role": "user", "content": f"Begin processing {file_name} for {ticker}. Report date: {report_date}, timing: {timing}.\n\nCOMPLETE FILE DATA:\n{full_schema}\n\nEMPTY CELLS NEEDING DATA ({len(empty_cells)} total):\n{', '.join(empty_cells) if empty_cells else 'None'}"}]
 
-                # Sub-loop: 15 iterations for files needing column insertion, 10 otherwise
-                max_file_iterations = 15 if needs_new_column else 10
+                # Sub-loop: 5 iterations max — agent must be efficient
+                max_file_iterations = 5
                 for iteration in range(1, max_file_iterations + 1):
                     total_iterations += 1
                     iter_start = time.time()
