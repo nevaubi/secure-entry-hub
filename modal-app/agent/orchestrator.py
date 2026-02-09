@@ -198,16 +198,20 @@ def build_file_system_prompt(
     browse_params: dict,
     scratchpad_summary: str,
     report_date: str = "",
+    fiscal_period_end: str | None = None,
     leftmost_date: str | None = None,
     leftmost_period: str | None = None,
     data_rows: list[int] | None = None,
 ) -> str:
     """Build a focused system prompt for processing a single file."""
 
+    # Use fiscal_period_end for column date comparison (fallback to report_date)
+    target_date = fiscal_period_end or report_date
+
     # Determine if a new column needs to be inserted
     needs_new_column = False
-    if leftmost_date and report_date:
-        needs_new_column = report_date > leftmost_date
+    if leftmost_date and target_date:
+        needs_new_column = target_date > leftmost_date
 
     new_column_section = ""
     if needs_new_column:
@@ -216,16 +220,16 @@ def build_file_system_prompt(
             rows_preview += f"... ({len(data_rows)} total)"
         new_column_section = f"""
 NEW COLUMN INSERTION REQUIRED:
-- The report_date ({report_date}) is NEWER than the current leftmost date column ({leftmost_date} / {leftmost_period})
+- The fiscal_period_end ({target_date}) is NEWER than the current leftmost date column ({leftmost_date} / {leftmost_period})
 - You MUST call insert_new_period_column FIRST to create a new column B
-- Use the report_date as the date_header and determine the correct fiscal period label
+- Use fiscal_period_end ({target_date}) as the date_header and determine the correct fiscal period label
 - After insertion, fill the new column B cells for all rows that had data in the previous columns
 - The rows needing data are: {rows_preview}
 """
     elif leftmost_date:
         new_column_section = f"""
 CURRENT LEFTMOST COLUMN: {leftmost_date} / {leftmost_period}
-- The report_date ({report_date}) matches or is older than the leftmost column
+- The fiscal_period_end ({target_date}) matches or is older than the leftmost column
 - No new column insertion needed — just fill any empty cells
 """
 
@@ -245,7 +249,7 @@ Call browse_stockanalysis with these exact parameters to get the data.
 WORKFLOW:
 1. Check if a new column needs to be inserted:
    - If the NEW COLUMN INSERTION REQUIRED section appears above, you MUST call insert_new_period_column FIRST
-   - Determine the correct date_header (the report_date) and period_header (e.g. "Q4 2026" for quarterly, "FY 2026" for annual)
+   - Determine the correct date_header (use fiscal_period_end: {target_date}) and period_header (e.g. "Q4 2026" for quarterly, "FY 2026" for annual)
    - After insertion, the tool returns a row_map telling you exactly which cells to fill (e.g. B3=Total Assets, B4=Current Assets...)
 2. If no new column is needed and there are no empty cells, respond with "FILE COMPLETE"
 3. Call browse_stockanalysis with the parameters above to navigate to the matching page
@@ -522,7 +526,7 @@ def save_single_file(context: AgentContext, storage: StorageClient, bucket_name:
     return False
 
 
-def run_agent(ticker: str, report_date: str, timing: str) -> dict[str, Any]:
+def run_agent(ticker: str, report_date: str, timing: str, fiscal_period_end: str | None = None) -> dict[str, Any]:
     """
     Run the agentic workflow for a ticker, processing one file at a time.
 
@@ -590,8 +594,9 @@ def run_agent(ticker: str, report_date: str, timing: str) -> dict[str, Any]:
                         leftmost_period = sheet.get("leftmost_period")
                         data_rows = sheet.get("data_rows")
 
-                # Check if new column insertion is needed
-                needs_new_column = leftmost_date and report_date and report_date > leftmost_date
+                # Check if new column insertion is needed (use fiscal_period_end, fallback to report_date)
+                target_date = fiscal_period_end or report_date
+                needs_new_column = leftmost_date and target_date and target_date > leftmost_date
 
                 # Skip files with no empty cells AND no new column needed
                 if not empty_cells and not needs_new_column:
@@ -606,7 +611,7 @@ def run_agent(ticker: str, report_date: str, timing: str) -> dict[str, Any]:
                     continue
 
                 if needs_new_column:
-                    print(f"  🆕 New column needed (report_date {report_date} > leftmost {leftmost_date})")
+                    print(f"  🆕 New column needed (fiscal_period_end {target_date} > leftmost {leftmost_date})")
                     print(f"  📊 {len(data_rows or [])} rows will need data in the new column")
                 else:
                     print(f"  📊 {len(empty_cells)} empty cells to fill")
@@ -623,6 +628,7 @@ def run_agent(ticker: str, report_date: str, timing: str) -> dict[str, Any]:
                     browse_params=browse_params,
                     scratchpad_summary=scratchpad_summary,
                     report_date=report_date,
+                    fiscal_period_end=fiscal_period_end,
                     leftmost_date=leftmost_date,
                     leftmost_period=leftmost_period,
                     data_rows=data_rows,
@@ -630,7 +636,7 @@ def run_agent(ticker: str, report_date: str, timing: str) -> dict[str, Any]:
 
                 # Fresh message history for each file
                 if needs_new_column:
-                    messages = [{"role": "user", "content": f"Begin processing {file_name} for {ticker}. Report date: {report_date}, timing: {timing}.\n\nCOMPLETE FILE DATA:\n{full_schema}\n\nA NEW COLUMN INSERTION IS REQUIRED. Focus ONLY on the newest period.\nDo NOT fill old/historical empty cells. Only fill column B after insertion.\nIgnore any empty cells in columns C, D, E, etc. — they are from older periods and not your concern.\n\nOnce you have gathered the financial values, you MUST call update_excel_cell for EVERY data row in column B.\nUse FULL absolute numbers (e.g., 394328000000 not 394.3B or 394,328).\nMatch each value to the correct row label carefully before inserting.\nDo NOT stop after extracting data — the job is not done until every cell is written."}]
+                    messages = [{"role": "user", "content": f"Begin processing {file_name} for {ticker}. Report date: {report_date}, fiscal_period_end: {target_date}, timing: {timing}.\n\nCOMPLETE FILE DATA:\n{full_schema}\n\nA NEW COLUMN INSERTION IS REQUIRED. The date_header for the new column must be the fiscal_period_end: {target_date} (NOT the report_date).\nFocus ONLY on the newest period.\nDo NOT fill old/historical empty cells. Only fill column B after insertion.\nIgnore any empty cells in columns C, D, E, etc. — they are from older periods and not your concern.\n\nOnce you have gathered the financial values, you MUST call update_excel_cell for EVERY data row in column B.\nUse FULL absolute numbers (e.g., 394328000000 not 394.3B or 394,328).\nMatch each value to the correct row label carefully before inserting.\nDo NOT stop after extracting data — the job is not done until every cell is written."}]
                 else:
                     messages = [{"role": "user", "content": f"Begin processing {file_name} for {ticker}. Report date: {report_date}, timing: {timing}.\n\nCOMPLETE FILE DATA:\n{full_schema}\n\nEMPTY CELLS NEEDING DATA ({len(empty_cells)} total):\n{', '.join(empty_cells) if empty_cells else 'None'}"}]
 

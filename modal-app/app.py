@@ -49,6 +49,7 @@ def process_ticker(
     ticker: str,
     report_date: str,
     timing: str,
+    fiscal_period_end: str | None = None,
     callback_url: str | None = None,
 ) -> dict:
     """
@@ -69,7 +70,7 @@ def process_ticker(
     print(f"Processing ticker: {ticker} for {report_date} ({timing})")
 
     try:
-        result = run_agent(ticker, report_date, timing)
+        result = run_agent(ticker, report_date, timing, fiscal_period_end=fiscal_period_end)
 
         # Report back to Lovable if callback URL provided
         if callback_url:
@@ -155,6 +156,7 @@ def webhook(data: dict) -> dict:
                 ticker=t["ticker"],
                 report_date=t["report_date"],
                 timing=t["timing"],
+                fiscal_period_end=t.get("fiscal_period_end"),
                 callback_url=callback_url,
             )
         )
