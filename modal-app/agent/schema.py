@@ -163,6 +163,21 @@ def analyze_excel_file_full(file_path: Path) -> dict[str, Any]:
                         "cells": cells,
                     })
 
+            # Extract leftmost date (B1) and period (B2) for new-column detection
+            leftmost_date = None
+            leftmost_period = None
+            if sheet.max_column and sheet.max_column >= 2:
+                b1 = sheet.cell(row=1, column=2).value
+                b2 = sheet.cell(row=2, column=2).value
+                leftmost_date = str(b1) if b1 is not None else None
+                leftmost_period = str(b2) if b2 is not None else None
+
+            # Identify data rows (rows where column B has values)
+            data_rows = []
+            for r in range(3, max_row + 1):
+                if sheet.cell(row=r, column=2).value is not None:
+                    data_rows.append(r)
+
             sheet_info = {
                 "name": sheet_name,
                 "max_row": max_row,
@@ -171,6 +186,9 @@ def analyze_excel_file_full(file_path: Path) -> dict[str, Any]:
                 "rows": rows,
                 "empty_cells": empty_cells,
                 "total_empty_cells": len(empty_cells),
+                "leftmost_date": leftmost_date,
+                "leftmost_period": leftmost_period,
+                "data_rows": data_rows,
             }
 
             analysis["sheets"].append(sheet_info)

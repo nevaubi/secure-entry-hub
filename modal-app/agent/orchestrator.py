@@ -141,6 +141,28 @@ TOOLS = [
         }
     },
     {
+        "name": "insert_new_period_column",
+        "description": "Insert a new column B into the current Excel file for a new fiscal period. This shifts ALL existing data one column to the right, then sets the date header (row 1) and period header (row 2) in the new column B. Returns a list of row numbers that need data (rows where the adjacent shifted column has values). Call this BEFORE using update_excel_cell to fill the new column.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "sheet_name": {
+                    "type": "string",
+                    "description": "Name of the Excel sheet"
+                },
+                "date_header": {
+                    "type": "string",
+                    "description": "Date for the new period, e.g. '2026-01-31'"
+                },
+                "period_header": {
+                    "type": "string",
+                    "description": "Fiscal period label, e.g. 'Q4 2026' or 'FY 2026'"
+                }
+            },
+            "required": ["sheet_name", "date_header", "period_header"]
+        }
+    },
+    {
         "name": "web_search",
         "description": "Search the web for financial data using Perplexity AI. Use this alongside browse_stockanalysis to cross-reference and validate values before inserting them. Returns AI-generated answers grounded in real web sources with citations.",
         "input_schema": {
@@ -177,35 +199,69 @@ def build_file_system_prompt(
     empty_cells: list[str],
     browse_params: dict,
     scratchpad_summary: str,
+    report_date: str = "",
+    leftmost_date: str | None = None,
+    leftmost_period: str | None = None,
+    data_rows: list[int] | None = None,
 ) -> str:
     """Build a focused system prompt for processing a single file."""
+
+    # Determine if a new column needs to be inserted
+    needs_new_column = False
+    if leftmost_date and report_date:
+        needs_new_column = report_date > leftmost_date
+
+    new_column_section = ""
+    if needs_new_column:
+        rows_preview = str(data_rows[:20]) if data_rows else "unknown"
+        if data_rows and len(data_rows) > 20:
+            rows_preview += f"... ({len(data_rows)} total)"
+        new_column_section = f"""
+NEW COLUMN INSERTION REQUIRED:
+- The report_date ({report_date}) is NEWER than the current leftmost date column ({leftmost_date} / {leftmost_period})
+- You MUST call insert_new_period_column FIRST to create a new column B
+- Use the report_date as the date_header and determine the correct fiscal period label
+- After insertion, fill the new column B cells for all rows that had data in the previous columns
+- The rows needing data are: {rows_preview}
+"""
+    elif leftmost_date:
+        new_column_section = f"""
+CURRENT LEFTMOST COLUMN: {leftmost_date} / {leftmost_period}
+- The report_date ({report_date}) matches or is older than the leftmost column
+- No new column insertion needed — just fill any empty cells
+"""
+
     prompt = f"""You are a financial data agent. You are processing file {file_index}/{total_files} for ticker {ticker}.
 
 CURRENT FILE: {file_name}
-This is the ONLY file you need to work on right now. Focus entirely on filling empty cells in this file.
+This is the ONLY file you need to work on right now.
 
 MATCHING StockAnalysis.com PAGE:
 - statement_type: {browse_params['statement_type']}
 - period: {browse_params['period']}
 - data_type: {browse_params['data_type']}
 Call browse_stockanalysis with these exact parameters to get the data.
-
+{new_column_section}
 COMPLETE FILE DATA:
 {full_schema}
 
 EMPTY CELLS NEEDING DATA ({len(empty_cells)} total):
-{', '.join(empty_cells) if empty_cells else 'None — this file is already complete.'}
+{', '.join(empty_cells) if empty_cells else 'None — this file may already be complete (but check if a new column is needed).'}
 
 {scratchpad_summary}
 
 WORKFLOW:
-1. If there are no empty cells, respond with "FILE COMPLETE" immediately
-2. Call browse_stockanalysis with the parameters above to navigate to the matching page
-3. Call extract_page_with_vision to read the financial data from the screenshot
-4. Call web_search to cross-reference values from a second source (Perplexity)
-5. Use note_finding to record gathered data and validation results
-6. Use update_excel_cell to fill ONLY empty cells with dual-source verified values
-7. When done filling all cells you can verify, respond with "FILE COMPLETE"
+1. Check if a new column needs to be inserted:
+   - If the report_date is NEWER than the leftmost date column (B1), call insert_new_period_column
+   - Determine the correct date_header (the report_date) and period_header (e.g. "Q4 2026" for quarterly, "FY 2026" for annual)
+   - After insertion, proceed to fill the newly created empty cells in column B
+2. If no new column is needed and there are no empty cells, respond with "FILE COMPLETE"
+3. Call browse_stockanalysis with the parameters above to navigate to the matching page
+4. Call extract_page_with_vision to read the financial data from the screenshot
+5. Call web_search to cross-reference values from a second source (Perplexity)
+6. Use note_finding to record gathered data and validation results
+7. Use update_excel_cell to fill cells with dual-source verified values
+8. When done, respond with "FILE COMPLETE"
 
 DUAL-SOURCE VALIDATION:
 - For every data point, gather it from BOTH StockAnalysis (via vision) AND Perplexity web_search
@@ -214,7 +270,8 @@ DUAL-SOURCE VALIDATION:
 - Record your validation reasoning with note_finding
 
 CRITICAL RULES:
-- NEVER modify cells that already contain values — ONLY fill empty cells
+- When inserting a new column, ONLY fill rows that had data in adjacent columns
+- When filling empty cells (no insertion), NEVER modify cells that already contain values
 - All numeric values must be fully written out (e.g., 394328000000 not 394.33B)
 - If you cannot confirm a value from two sources, leave the cell empty
 - Match row labels and column headers carefully to the correct fiscal periods
@@ -387,6 +444,26 @@ def handle_tool_call(context: AgentContext, tool_name: str, tool_input: dict) ->
 
         return json.dumps({"success": success})
 
+    elif tool_name == "insert_new_period_column":
+        bucket_name = context.current_file
+        if not bucket_name:
+            return json.dumps({"error": "No current file set"})
+
+        updater = context.get_updater(bucket_name)
+        if not updater:
+            return json.dumps({"error": f"Cannot open file {bucket_name}"})
+
+        result = updater.insert_new_period_column(
+            tool_input["sheet_name"],
+            tool_input["date_header"],
+            tool_input["period_header"]
+        )
+
+        if result.get("success"):
+            context.files_modified.add(bucket_name)
+
+        return json.dumps(result)
+
     elif tool_name == "web_search":
         query = tool_input["query"]
         api_key = os.environ.get("PERPLEXITY_API_KEY", "")
@@ -499,24 +576,38 @@ def run_agent(ticker: str, report_date: str, timing: str) -> dict[str, Any]:
                 file_analysis = analyze_excel_file_full(files[file_name])
                 full_schema = format_full_schema_for_llm(file_analysis)
 
-                # Collect empty cells list
+                # Collect empty cells and leftmost date info
                 empty_cells = []
+                leftmost_date = None
+                leftmost_period = None
+                data_rows = None
                 for sheet in file_analysis.get("sheets", []):
                     empty_cells.extend(sheet.get("empty_cells", []))
+                    if leftmost_date is None:
+                        leftmost_date = sheet.get("leftmost_date")
+                        leftmost_period = sheet.get("leftmost_period")
+                        data_rows = sheet.get("data_rows")
 
-                # Skip files with no empty cells
-                if not empty_cells:
-                    print(f"  ✅ No empty cells — skipping")
+                # Check if new column insertion is needed
+                needs_new_column = leftmost_date and report_date and report_date > leftmost_date
+
+                # Skip files with no empty cells AND no new column needed
+                if not empty_cells and not needs_new_column:
+                    print(f"  ✅ No empty cells and no new column needed — skipping")
                     context.completed_files.append(file_name)
                     context.notes.append({
                         "category": "file_complete",
-                        "content": f"{file_name}: No empty cells, skipped.",
+                        "content": f"{file_name}: No empty cells, no new column needed, skipped.",
                         "file": file_name,
                         "timestamp": time.time(),
                     })
                     continue
 
-                print(f"  📊 {len(empty_cells)} empty cells to fill")
+                if needs_new_column:
+                    print(f"  🆕 New column needed (report_date {report_date} > leftmost {leftmost_date})")
+                    print(f"  📊 {len(data_rows or [])} rows will need data in the new column")
+                else:
+                    print(f"  📊 {len(empty_cells)} empty cells to fill")
 
                 # Build scratchpad summary from all previous work
                 scratchpad_summary = build_scratchpad_summary(context.notes)
@@ -531,6 +622,10 @@ def run_agent(ticker: str, report_date: str, timing: str) -> dict[str, Any]:
                     empty_cells=empty_cells,
                     browse_params=browse_params,
                     scratchpad_summary=scratchpad_summary,
+                    report_date=report_date,
+                    leftmost_date=leftmost_date,
+                    leftmost_period=leftmost_period,
+                    data_rows=data_rows,
                 )
 
                 # Fresh message history for each file
