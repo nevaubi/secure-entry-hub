@@ -270,6 +270,10 @@ CRITICAL RULES:
 - When a new column is being inserted, IGNORE all empty cells in columns C, D, E, etc.
   Your ONLY job is to fill the NEW column B with the latest period's data.
   Do NOT research or fill historical data from older periods.
+- After gathering financial data, you MUST call update_excel_cell for every target row.
+  Do NOT stop after browsing or extracting — the file is not complete until cells are written.
+  Always use fully written-out absolute numbers (e.g., 394328000000 not 394.3B).
+  Carefully match each value to its corresponding row label before writing.
 - When filling empty cells (no insertion), NEVER modify cells that already contain values
 - All numeric values must be fully written out (e.g., 394328000000 not 394.33B)
 - Match row labels and column headers carefully to the correct fiscal periods
@@ -626,7 +630,7 @@ def run_agent(ticker: str, report_date: str, timing: str) -> dict[str, Any]:
 
                 # Fresh message history for each file
                 if needs_new_column:
-                    messages = [{"role": "user", "content": f"Begin processing {file_name} for {ticker}. Report date: {report_date}, timing: {timing}.\n\nCOMPLETE FILE DATA:\n{full_schema}\n\nA NEW COLUMN INSERTION IS REQUIRED. Focus ONLY on the newest period.\nDo NOT fill old/historical empty cells. Only fill column B after insertion.\nIgnore any empty cells in columns C, D, E, etc. — they are from older periods and not your concern."}]
+                    messages = [{"role": "user", "content": f"Begin processing {file_name} for {ticker}. Report date: {report_date}, timing: {timing}.\n\nCOMPLETE FILE DATA:\n{full_schema}\n\nA NEW COLUMN INSERTION IS REQUIRED. Focus ONLY on the newest period.\nDo NOT fill old/historical empty cells. Only fill column B after insertion.\nIgnore any empty cells in columns C, D, E, etc. — they are from older periods and not your concern.\n\nOnce you have gathered the financial values, you MUST call update_excel_cell for EVERY data row in column B.\nUse FULL absolute numbers (e.g., 394328000000 not 394.3B or 394,328).\nMatch each value to the correct row label carefully before inserting.\nDo NOT stop after extracting data — the job is not done until every cell is written."}]
                 else:
                     messages = [{"role": "user", "content": f"Begin processing {file_name} for {ticker}. Report date: {report_date}, timing: {timing}.\n\nCOMPLETE FILE DATA:\n{full_schema}\n\nEMPTY CELLS NEEDING DATA ({len(empty_cells)} total):\n{', '.join(empty_cells) if empty_cells else 'None'}"}]
 
