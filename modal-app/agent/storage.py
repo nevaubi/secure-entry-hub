@@ -17,12 +17,6 @@ BUCKET_MAPPING = {
     "financials-quarterly-income": "financials-quarterly-income",
     "financials-quarterly-balance": "financials-quarterly-balance",
     "financials-quarterly-cashflow": "financials-quarterly-cashflow",
-    "standardized-annual-income": "standardized-annual-income",
-    "standardized-annual-balance": "standardized-annual-balance",
-    "standardized-annual-cashflow": "standardized-annual-cashflow",
-    "standardized-quarterly-income": "standardized-quarterly-income",
-    "standardized-quarterly-balance": "standardized-quarterly-balance",
-    "standardized-quarterly-cashflow": "standardized-quarterly-cashflow",
 }
 
 
@@ -111,7 +105,7 @@ class StorageClient:
 
     def download_all_files(self, ticker: str, work_dir: Path) -> dict[str, Path]:
         """
-        Download all 12 Excel files for a ticker.
+        Download all 6 Excel files for a ticker.
 
         Args:
             ticker: Stock ticker symbol
