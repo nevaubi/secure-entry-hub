@@ -62,6 +62,8 @@ def process_ticker(
     Returns:
         dict with status, files_updated count, and any errors
     """
+    import sys
+    sys.path.insert(0, "/root")
     import httpx
     from agent.orchestrator import run_agent
 
