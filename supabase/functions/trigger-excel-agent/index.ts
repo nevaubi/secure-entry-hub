@@ -3,17 +3,19 @@
    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
  };
  
- interface EarningsRecord {
-   ticker: string;
-   report_date: string;
-   before_after_market: string | null;
- }
- 
- interface TickerPayload {
-   ticker: string;
-   report_date: string;
-   timing: 'premarket' | 'afterhours';
- }
+interface EarningsRecord {
+  ticker: string;
+  report_date: string;
+  fiscal_period_end: string | null;
+  before_after_market: string | null;
+}
+
+interface TickerPayload {
+  ticker: string;
+  report_date: string;
+  fiscal_period_end: string | null;
+  timing: 'premarket' | 'afterhours';
+}
  
  Deno.serve(async (req) => {
    if (req.method === 'OPTIONS') {
@@ -56,7 +58,7 @@
         : `report_date=eq.${today}&before_after_market=eq.${marketTiming}`;
 
       const earningsResponse = await fetch(
-        `${supabaseUrl}/rest/v1/earnings_calendar?${queryFilter}&select=ticker,report_date,before_after_market`,
+        `${supabaseUrl}/rest/v1/earnings_calendar?${queryFilter}&select=ticker,report_date,fiscal_period_end,before_after_market`,
         {
           headers: {
             'apikey': supabaseKey,
@@ -84,11 +86,12 @@
      }
  
      // Prepare payload for Modal
-     const tickerPayloads: TickerPayload[] = earnings.map(e => ({
-       ticker: e.ticker,
-       report_date: e.report_date,
-       timing: timing as 'premarket' | 'afterhours',
-     }));
+    const tickerPayloads: TickerPayload[] = earnings.map(e => ({
+      ticker: e.ticker,
+      report_date: e.report_date,
+      fiscal_period_end: e.fiscal_period_end,
+      timing: timing as 'premarket' | 'afterhours',
+    }));
  
      // Create processing run records in the database
      for (const payload of tickerPayloads) {
