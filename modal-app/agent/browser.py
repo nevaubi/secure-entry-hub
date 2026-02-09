@@ -1,16 +1,17 @@
 """
 Browser automation for StockAnalysis.com.
 
-Uses Playwright to login and extract financial data.
+Uses Playwright to login and extract financial data via screenshots + Gemini vision.
 """
 
 import os
+import time
 from typing import Any
 from playwright.sync_api import sync_playwright, Page, Browser
 
 
 class StockAnalysisBrowser:
-    """Browser automation for StockAnalysis.com."""
+    """Browser automation for StockAnalysis.com with persistent session."""
 
     def __init__(self):
         self.username = os.environ.get("STOCKANALYSIS_USERNAME")
@@ -27,7 +28,7 @@ class StockAnalysisBrowser:
     def __enter__(self):
         self.playwright = sync_playwright().start()
         self.browser = self.playwright.chromium.launch(headless=True)
-        self.page = self.browser.new_page()
+        self.page = self.browser.new_page(viewport={"width": 1920, "height": 1080})
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -38,7 +39,8 @@ class StockAnalysisBrowser:
 
     def login(self) -> bool:
         """
-        Login to StockAnalysis.com.
+        Login to StockAnalysis.com using exact UI selectors.
+        Retries up to 2 times on failure. Saves debug screenshot on failure.
 
         Returns:
             True if login successful, False otherwise
@@ -46,152 +48,146 @@ class StockAnalysisBrowser:
         if self.logged_in:
             return True
 
-        try:
-            print("Logging in to StockAnalysis.com...")
-            self.page.goto("https://stockanalysis.com/login/", timeout=30000)
+        max_attempts = 2
+        for attempt in range(1, max_attempts + 1):
+            try:
+                print(f"Login attempt {attempt}/{max_attempts}...")
+                self.page.goto("https://stockanalysis.com/login/", timeout=30000)
+                self.page.wait_for_load_state("networkidle", timeout=15000)
 
-            # Wait for login form
-            self.page.wait_for_selector('input[type="email"]', timeout=10000)
+                # Wait for email input by id
+                self.page.wait_for_selector("input#email", timeout=10000)
 
-            # Fill credentials
-            self.page.fill('input[type="email"]', self.username)
-            self.page.fill('input[type="password"]', self.password)
+                # Fill credentials using exact id selectors
+                self.page.fill("input#email", self.username)
+                self.page.fill("input#password", self.password)
 
-            # Submit
-            self.page.click('button[type="submit"]')
+                # Click the Log In button (no type="submit", use role/text)
+                login_btn = self.page.get_by_role("button", name="Log In")
+                login_btn.click()
 
-            # Wait for redirect or dashboard
-            self.page.wait_for_load_state("networkidle", timeout=15000)
+                # Wait for navigation away from /login/
+                self.page.wait_for_load_state("networkidle", timeout=15000)
+                time.sleep(2)  # Extra settle time
 
-            # Check if logged in (look for user menu or dashboard element)
-            if "login" not in self.page.url.lower():
-                self.logged_in = True
-                print("Login successful")
-                return True
-            else:
-                print("Login may have failed - still on login page")
-                return False
+                current_url = self.page.url
+                print(f"Post-login URL: {current_url}")
 
-        except Exception as e:
-            print(f"Login error: {e}")
-            return False
+                if "login" not in current_url.lower():
+                    self.logged_in = True
+                    print("Login successful")
+                    return True
+                else:
+                    print(f"Still on login page after attempt {attempt}")
+                    # Save debug screenshot
+                    self.page.screenshot(path=f"/tmp/login_debug_attempt_{attempt}.png", full_page=True)
 
-    def extract_financial_table(self, ticker: str, statement_type: str, period: str) -> dict[str, Any]:
+            except Exception as e:
+                print(f"Login error on attempt {attempt}: {e}")
+                try:
+                    self.page.screenshot(path=f"/tmp/login_error_attempt_{attempt}.png", full_page=True)
+                except Exception:
+                    pass
+
+        print("All login attempts failed")
+        return False
+
+    def _build_url(self, ticker: str, statement_type: str, period: str, data_type: str) -> str:
         """
-        Extract a financial statement table.
+        Build the correct StockAnalysis.com URL for a financial statement.
 
         Args:
-            ticker: Stock ticker symbol
-            statement_type: One of "income-statement", "balance-sheet", "cash-flow-statement"
-            period: Either "annual" or "quarterly"
+            ticker: Stock ticker (e.g., "PLTR")
+            statement_type: One of "income", "balance", "cashflow"
+            period: "annual" or "quarterly"
+            data_type: "standardized" or "as-reported"
 
         Returns:
-            Dict with column headers and row data
+            The full URL string
         """
-        url = f"https://stockanalysis.com/stocks/{ticker.lower()}/financials/{statement_type}/?p={period}"
+        base = f"https://stockanalysis.com/stocks/{ticker.lower()}/financials"
+
+        # Income statement has NO extra path segment
+        path_map = {
+            "income": "",
+            "balance": "/balance-sheet",
+            "cashflow": "/cash-flow-statement",
+        }
+        path = path_map.get(statement_type, "")
+
+        params = []
+        if period == "quarterly":
+            params.append("p=quarterly")
+        if data_type == "as-reported":
+            params.append("type=as-reported")
+
+        url = f"{base}{path}/"
+        if params:
+            url += "?" + "&".join(params)
+
+        return url
+
+    def navigate_to_financials(self, ticker: str, statement_type: str, period: str, data_type: str) -> dict[str, Any]:
+        """
+        Navigate to a financial statement page and take a full-page screenshot.
+
+        Args:
+            ticker: Stock ticker
+            statement_type: "income", "balance", or "cashflow"
+            period: "annual" or "quarterly"
+            data_type: "standardized" or "as-reported"
+
+        Returns:
+            Dict with success status, URL visited, and screenshot bytes
+        """
+        if not self.login():
+            return {"success": False, "error": "Failed to login"}
+
+        url = self._build_url(ticker, statement_type, period, data_type)
 
         try:
-            print(f"Extracting {statement_type} ({period}) for {ticker}...")
+            print(f"Navigating to: {url}")
             self.page.goto(url, timeout=30000)
             self.page.wait_for_load_state("networkidle", timeout=15000)
 
-            # Wait for the table to load
-            self.page.wait_for_selector("table", timeout=10000)
+            # Wait for the financial table to appear
+            try:
+                self.page.wait_for_selector("table", timeout=10000)
+            except Exception:
+                print("Warning: table selector not found, proceeding with screenshot anyway")
 
-            # Extract table data using JavaScript
-            table_data = self.page.evaluate("""
-                () => {
-                    const table = document.querySelector('table');
-                    if (!table) return null;
+            time.sleep(1)  # Let any lazy-loaded content settle
 
-                    const headers = [];
-                    const headerCells = table.querySelectorAll('thead th');
-                    headerCells.forEach(th => headers.push(th.textContent?.trim() || ''));
+            # Take full-page screenshot
+            screenshot_bytes = self.screenshot_full_page()
 
-                    const rows = [];
-                    const bodyRows = table.querySelectorAll('tbody tr');
-                    bodyRows.forEach(tr => {
-                        const cells = tr.querySelectorAll('td');
-                        const rowData = {};
-                        cells.forEach((td, i) => {
-                            const header = headers[i] || `col_${i}`;
-                            rowData[header] = td.textContent?.trim() || '';
-                        });
-                        // Get the row label from first cell
-                        const label = tr.querySelector('td')?.textContent?.trim() || '';
-                        if (label) {
-                            rowData['_label'] = label;
-                            rows.push(rowData);
-                        }
-                    });
+            # Save debug copy
+            debug_name = f"{ticker}_{statement_type}_{period}_{data_type}".replace("-", "_")
+            self.page.screenshot(path=f"/tmp/{debug_name}.png", full_page=True)
 
-                    return { headers, rows };
-                }
-            """)
-
-            if table_data:
-                print(f"Extracted {len(table_data.get('rows', []))} rows")
-                return {
-                    "success": True,
-                    "statement_type": statement_type,
-                    "period": period,
-                    "ticker": ticker,
-                    **table_data,
-                }
-            else:
-                return {
-                    "success": False,
-                    "error": "Could not find table",
-                    "statement_type": statement_type,
-                    "period": period,
-                    "ticker": ticker,
-                }
+            return {
+                "success": True,
+                "url": url,
+                "ticker": ticker,
+                "statement_type": statement_type,
+                "period": period,
+                "data_type": data_type,
+                "screenshot_bytes": screenshot_bytes,
+                "page_title": self.page.title(),
+            }
 
         except Exception as e:
-            print(f"Error extracting {statement_type}: {e}")
+            print(f"Error navigating to {url}: {e}")
+            try:
+                self.page.screenshot(path=f"/tmp/nav_error_{ticker}_{statement_type}.png", full_page=True)
+            except Exception:
+                pass
             return {
                 "success": False,
                 "error": str(e),
-                "statement_type": statement_type,
-                "period": period,
-                "ticker": ticker,
+                "url": url,
             }
 
-    def extract_all_financials(self, ticker: str) -> dict[str, dict]:
-        """
-        Extract all financial statements for a ticker.
-
-        Args:
-            ticker: Stock ticker symbol
-
-        Returns:
-            Dict with all extracted financial data
-        """
-        if not self.login():
-            return {"error": "Failed to login to StockAnalysis.com"}
-
-        results = {}
-
-        statement_types = ["income-statement", "balance-sheet", "cash-flow-statement"]
-        periods = ["annual", "quarterly"]
-
-        for statement in statement_types:
-            for period in periods:
-                key = f"{statement}_{period}"
-                results[key] = self.extract_financial_table(ticker, statement, period)
-
-        return results
-
-
-def extract_financials(ticker: str) -> dict[str, dict]:
-    """
-    Convenience function to extract all financials for a ticker.
-
-    Args:
-        ticker: Stock ticker symbol
-
-    Returns:
-        Dict with all extracted financial data
-    """
-    with StockAnalysisBrowser() as browser:
-        return browser.extract_all_financials(ticker)
+    def screenshot_full_page(self) -> bytes:
+        """Take a full-page screenshot and return the bytes."""
+        return self.page.screenshot(full_page=True, type="png")

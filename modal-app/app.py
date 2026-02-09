@@ -40,6 +40,7 @@ secrets = [
     modal.Secret.from_name("supabase-external-secret"),  # EXTERNAL_SUPABASE_URL, EXTERNAL_SUPABASE_SERVICE_KEY
     modal.Secret.from_name("modal-webhook-secret"),  # MODAL_WEBHOOK_SECRET
     modal.Secret.from_name("perplexity-secret"),  # PERPLEXITY_API_KEY
+    modal.Secret.from_name("gemini-secret"),  # GEMINI_API_KEY
 ]
 
 
