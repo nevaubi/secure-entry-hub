@@ -91,6 +91,20 @@ TOOLS = [
             "properties": {},
             "required": []
         }
+    },
+    {
+        "name": "web_search",
+        "description": "Search the web for financial data using Perplexity AI. Use this alongside browse_stockanalysis to cross-reference and validate values before inserting them. Returns AI-generated answers grounded in real web sources with citations.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Specific financial query, e.g. 'Apple Inc Q4 2025 quarterly revenue net income total assets'"
+                }
+            },
+            "required": ["query"]
+        }
     }
 ]
 
@@ -98,11 +112,20 @@ TOOLS = [
 SYSTEM_PROMPT = """You are a financial data agent. Your task is to update Excel files containing financial statements with accurate, up-to-date data.
 
 WORKFLOW:
-1. First, use analyze_excel to understand the structure of each file you need to update
+1. Use analyze_excel to understand the structure of each file you need to update
 2. Identify ONLY empty cells that need to be filled in
-3. Use browse_stockanalysis to get the latest financial data from StockAnalysis.com
-4. Use update_excel_cell to fill in ONLY empty cells with the correct values
-5. Call save_all_files when done
+3. Use BOTH browse_stockanalysis AND web_search to gather financial data
+4. Cross-reference values from both sources before writing anything
+5. Use update_excel_cell to fill in ONLY empty cells with verified values
+6. Call save_all_files when done
+
+DUAL-SOURCE VALIDATION:
+- You have two equal data sources: browse_stockanalysis and web_search
+- For every data point you intend to insert, gather it from BOTH sources
+- If both sources agree on a value, use it
+- If the sources disagree, investigate further with additional web_search queries
+- If you still cannot confirm a value with confidence, leave the cell empty
+- This cross-referencing is mandatory — do NOT rely on a single source alone
 
 CRITICAL RULES — READ CAREFULLY:
 
@@ -227,6 +250,38 @@ def handle_tool_call(context: AgentContext, tool_name: str, tool_input: dict) ->
             "files_modified": list(context.files_modified)
         })
 
+    elif tool_name == "web_search":
+        query = tool_input["query"]
+        api_key = os.environ.get("PERPLEXITY_API_KEY", "")
+        if not api_key:
+            return json.dumps({"error": "PERPLEXITY_API_KEY not configured"})
+
+        import httpx
+        response = httpx.post(
+            "https://api.perplexity.ai/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "sonar-pro",
+                "messages": [
+                    {"role": "system", "content": "You are a financial data assistant. Provide precise numerical financial data. Always give fully written out absolute numbers (e.g., 394328000000 not 394.33B). Cite your sources."},
+                    {"role": "user", "content": query},
+                ],
+            },
+            timeout=30,
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            answer = data["choices"][0]["message"]["content"]
+            citations = data.get("citations", [])
+            context.data_sources.append("perplexity-web-search")
+            return json.dumps({"answer": answer, "citations": citations})
+        else:
+            return json.dumps({"error": f"Perplexity API error: {response.status_code}"})
+
     else:
         return json.dumps({"error": f"Unknown tool: {tool_name}"})
 
@@ -282,9 +337,10 @@ Here is an overview of the file schemas:
 Please:
 1. Review the file structures above
 2. Identify ONLY cells that are currently EMPTY and need financial data
-3. Browse StockAnalysis.com to get the data
-4. Fill in ONLY empty cells — do NOT modify any cell that already has a value
-5. Save all files when done
+3. Use BOTH StockAnalysis.com AND web search to get and cross-reference the data
+4. Only insert values that are corroborated by both sources
+5. Fill in ONLY empty cells — do NOT modify any cell that already has a value
+6. Save all files when done
 
 IMPORTANT: Only fill empty cells. Do NOT edit, overwrite, or modify any pre-existing data. All numeric values must be fully written out (e.g., 394328000000 not 394.33B)."""
 

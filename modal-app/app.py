@@ -38,6 +38,7 @@ secrets = [
     modal.Secret.from_name("stockanalysis-secret"),  # STOCKANALYSIS_USERNAME, STOCKANALYSIS_PASSWORD
     modal.Secret.from_name("supabase-external-secret"),  # EXTERNAL_SUPABASE_URL, EXTERNAL_SUPABASE_SERVICE_KEY
     modal.Secret.from_name("modal-webhook-secret"),  # MODAL_WEBHOOK_SECRET
+    modal.Secret.from_name("perplexity-secret"),  # PERPLEXITY_API_KEY
 ]
 
 
