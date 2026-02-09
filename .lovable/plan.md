@@ -1,65 +1,107 @@
 
+## Production Quality Improvements to Agent
 
-## Fix Two Critical Bugs in the Pipeline
+Three targeted changes, all in `modal-app/agent/orchestrator.py`.
 
-### Bug 1: Python Indentation Error in Agent Module Files
+### 1. Upgrade model to claude-opus-4-6
 
-**The problem:** All 5 files in `modal-app/agent/` have an extra leading space on every single line. Python is whitespace-sensitive, so this will cause an `IndentationError` the moment Modal tries to import and run the agent code.
+Change line 289 from `claude-sonnet-4-20250514` to `claude-opus-4-6` for frontier-level intelligence, stronger agentic capabilities, and better financial analysis accuracy.
 
-**Affected files:**
-- `modal-app/agent/__init__.py`
-- `modal-app/agent/orchestrator.py`
-- `modal-app/agent/browser.py`
-- `modal-app/agent/schema.py`
-- `modal-app/agent/storage.py`
-- `modal-app/agent/updater.py`
+### 2. Specify that all values are fully written out
 
-Note: `modal-app/app.py` does NOT have this issue -- it was already fixed previously.
+Update the SYSTEM_PROMPT to make clear that all numbers in the Excel files are in absolute values (e.g., `1234567890` not `1234.57` in millions). The agent must write values the same way — never abbreviate to millions, billions, or thousands.
 
-**The fix:** Remove the single leading space from every line in all 6 files. No logic changes, purely whitespace correction.
+### 3. Strongly prohibit editing pre-existing data
 
----
-
-### Bug 2: `before_after_market` Timing Mismatch
-
-**The problem:** The `trigger-excel-agent` edge function queries the `earnings_calendar` table using `"Before Market"` and `"After Market"` (with spaces), but the EODHD API stores them as `"BeforeMarket"` and `"AfterMarket"` (no spaces). This means the query always returns zero tickers, so the pipeline never runs.
-
-Current values in the database:
-- `BeforeMarket`
-- `AfterMarket`
-- `null` (some records have no timing)
-
-**The fix:** In `supabase/functions/trigger-excel-agent/index.ts`, change line 48 from:
-
-```text
-const marketTiming = timing === 'premarket' ? 'Before Market' : 'After Market';
-```
-
-to:
-
-```text
-const marketTiming = timing === 'premarket' ? 'BeforeMarket' : 'AfterMarket';
-```
-
-Additionally, for `afterhours` timing, we should also query for records where `before_after_market` is `null`, since some EODHD records lack this field. Those null-timing records should be treated as after-hours by default. This requires updating the query to use an `or` filter when timing is `afterhours`.
+Add an explicit, strongly-worded rule to the SYSTEM_PROMPT that the agent must ONLY populate empty cells. Any cell that already contains data must be left completely untouched. Also update the user message at the bottom of `run_agent()` to reinforce this.
 
 ---
 
 ### Technical Details
 
-**Files to modify (7 total):**
+**File:** `modal-app/agent/orchestrator.py`
 
-| File | Change |
-|---|---|
-| `modal-app/agent/__init__.py` | Remove leading space from every line |
-| `modal-app/agent/orchestrator.py` | Remove leading space from every line |
-| `modal-app/agent/browser.py` | Remove leading space from every line |
-| `modal-app/agent/schema.py` | Remove leading space from every line |
-| `modal-app/agent/storage.py` | Remove leading space from every line |
-| `modal-app/agent/updater.py` | Remove leading space from every line |
-| `supabase/functions/trigger-excel-agent/index.ts` | Fix timing values and add null handling |
+**Change 1 — Model (line 289):**
+```python
+# Before
+model="claude-sonnet-4-20250514",
 
-**Risk:** Low. The Python files are pure whitespace fixes with no logic changes. The edge function change is a two-value string correction plus a small query enhancement.
+# After
+model="claude-opus-4-6",
+```
 
-**After these fixes:** The pipeline will correctly match tickers from the earnings calendar and the agent code will run without Python syntax errors on Modal.
+**Change 2 and 3 — System prompt (lines 98-124):**
 
+Replace the current `SYSTEM_PROMPT` with:
+
+```python
+SYSTEM_PROMPT = """You are a financial data agent. Your task is to update Excel files containing financial statements with accurate, up-to-date data.
+
+WORKFLOW:
+1. First, use analyze_excel to understand the structure of each file you need to update
+2. Identify ONLY empty cells that need to be filled in
+3. Use browse_stockanalysis to get the latest financial data from StockAnalysis.com
+4. Use update_excel_cell to fill in ONLY empty cells with the correct values
+5. Call save_all_files when done
+
+CRITICAL RULES — READ CAREFULLY:
+
+DO NOT EDIT EXISTING DATA:
+- You must NEVER modify, overwrite, or change any cell that already contains a value
+- ONLY populate cells that are currently empty/blank
+- If a cell already has data — even if you believe it is incorrect or outdated — leave it untouched
+- This is the single most important rule. Violating it will corrupt the files.
+
+NUMBER FORMAT — FULLY WRITTEN OUT VALUES:
+- All values in these Excel files are fully written out in absolute terms
+- For example: revenue of 394.33 billion is stored as 394328000000, NOT as 394.33 or 394328
+- When you insert a value, write the complete number with no abbreviation
+- Do NOT use thousands, millions, or billions shorthand
+- Match this format exactly when inserting new data
+
+DATA ACCURACY:
+- Match row labels carefully (Revenue, Net Income, Total Assets, etc.)
+- Match column headers to the correct fiscal periods
+- If you cannot find accurate data for a cell, leave it empty rather than guessing
+- Be careful to distinguish between annual and quarterly data
+- Always verify the data you're inserting matches the expected format and period
+
+FILES AVAILABLE:
+- financials-annual-income: Annual income statement data
+- financials-annual-balance: Annual balance sheet data
+- financials-annual-cashflow: Annual cash flow statement data
+- financials-quarterly-income: Quarterly income statement data
+- financials-quarterly-balance: Quarterly balance sheet data
+- financials-quarterly-cashflow: Quarterly cash flow statement data
+- standardized-annual-*: Standardized versions of the above
+- standardized-quarterly-*: Standardized versions of the above
+"""
+```
+
+**Change 3 (continued) — User message (lines 268-275):**
+
+Update the instruction at the end of the user message from:
+
+```python
+Please:
+1. Review the file structures above
+2. Identify cells that need to be updated with latest financial data
+3. Browse StockAnalysis.com to get the data
+4. Update the appropriate cells
+5. Save all files when done
+
+Focus on filling in any empty cells or updating any data that appears outdated.
+```
+
+to:
+
+```python
+Please:
+1. Review the file structures above
+2. Identify ONLY cells that are currently EMPTY and need financial data
+3. Browse StockAnalysis.com to get the data
+4. Fill in ONLY empty cells — do NOT modify any cell that already has a value
+5. Save all files when done
+
+IMPORTANT: Only fill empty cells. Do NOT edit, overwrite, or modify any pre-existing data. All numeric values must be fully written out (e.g., 394328000000 not 394.33B).
+```
