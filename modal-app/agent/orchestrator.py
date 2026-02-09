@@ -195,8 +195,6 @@ def build_file_system_prompt(
     file_name: str,
     file_index: int,
     total_files: int,
-    full_schema: str,
-    empty_cells: list[str],
     browse_params: dict,
     scratchpad_summary: str,
     report_date: str = "",
@@ -241,12 +239,6 @@ MATCHING StockAnalysis.com PAGE:
 - period: {browse_params['period']}
 - data_type: {browse_params['data_type']}
 Call browse_stockanalysis with these exact parameters to get the data.
-{new_column_section}
-COMPLETE FILE DATA:
-{full_schema}
-
-EMPTY CELLS NEEDING DATA ({len(empty_cells)} total):
-{', '.join(empty_cells) if empty_cells else 'None — this file may already be complete (but check if a new column is needed).'}
 
 {scratchpad_summary}
 
@@ -464,15 +456,6 @@ def handle_tool_call(context: AgentContext, tool_name: str, tool_input: dict) ->
 
         if result.get("success"):
             context.files_modified.add(bucket_name)
-            # Re-analyze the file after insertion so agent sees updated schema
-            try:
-                updater.save()  # Save so analyze reads the updated file
-                from .schema import analyze_excel_file_full, format_full_schema_for_llm
-                refreshed = analyze_excel_file_full(context.files[bucket_name])
-                refreshed_schema = format_full_schema_for_llm(refreshed)
-                result["updated_schema"] = refreshed_schema
-            except Exception as e:
-                print(f"  ⚠️  Could not refresh schema after insertion: {e}")
 
         return json.dumps(result)
 
@@ -489,7 +472,7 @@ def handle_tool_call(context: AgentContext, tool_name: str, tool_input: dict) ->
                 "Content-Type": "application/json",
             },
             json={
-                "model": "sonar-pro",
+                "model": "sonar",
                 "messages": [
                     {"role": "system", "content": "You are a financial data assistant. Provide precise numerical financial data. Always give fully written out absolute numbers (e.g., 394328000000 not 394.33B). Cite your sources."},
                     {"role": "user", "content": query},
@@ -630,8 +613,6 @@ def run_agent(ticker: str, report_date: str, timing: str) -> dict[str, Any]:
                     file_name=file_name,
                     file_index=file_idx,
                     total_files=len(FILE_ORDER),
-                    full_schema=full_schema,
-                    empty_cells=empty_cells,
                     browse_params=browse_params,
                     scratchpad_summary=scratchpad_summary,
                     report_date=report_date,
@@ -641,7 +622,7 @@ def run_agent(ticker: str, report_date: str, timing: str) -> dict[str, Any]:
                 )
 
                 # Fresh message history for each file
-                messages = [{"role": "user", "content": f"Begin processing {file_name} for {ticker}. Report date: {report_date}, timing: {timing}."}]
+                messages = [{"role": "user", "content": f"Begin processing {file_name} for {ticker}. Report date: {report_date}, timing: {timing}.\n\nCOMPLETE FILE DATA:\n{full_schema}\n\nEMPTY CELLS NEEDING DATA ({len(empty_cells)} total):\n{', '.join(empty_cells) if empty_cells else 'None'}"}]
 
                 # Sub-loop: 15 iterations for files needing column insertion, 10 otherwise
                 max_file_iterations = 15 if needs_new_column else 10
@@ -652,7 +633,7 @@ def run_agent(ticker: str, report_date: str, timing: str) -> dict[str, Any]:
 
                     response = client.messages.create(
                         model="claude-opus-4-6",
-                        max_tokens=8192,
+                        max_tokens=8192 if iteration == 1 else 4096,
                         system=system_prompt,
                         tools=TOOLS,
                         messages=messages,
