@@ -1,107 +1,125 @@
 
-## Production Quality Improvements to Agent
 
-Three targeted changes, all in `modal-app/agent/orchestrator.py`.
+## Add Perplexity Web Search as a Co-Equal Data Source
 
-### 1. Upgrade model to claude-opus-4-6
+### Goal
 
-Change line 289 from `claude-sonnet-4-20250514` to `claude-opus-4-6` for frontier-level intelligence, stronger agentic capabilities, and better financial analysis accuracy.
-
-### 2. Specify that all values are fully written out
-
-Update the SYSTEM_PROMPT to make clear that all numbers in the Excel files are in absolute values (e.g., `1234567890` not `1234.57` in millions). The agent must write values the same way — never abbreviate to millions, billions, or thousands.
-
-### 3. Strongly prohibit editing pre-existing data
-
-Add an explicit, strongly-worded rule to the SYSTEM_PROMPT that the agent must ONLY populate empty cells. Any cell that already contains data must be left completely untouched. Also update the user message at the bottom of `run_agent()` to reinforce this.
+Add a `web_search` tool powered by Perplexity's Sonar API that the agent uses **alongside** StockAnalysis.com — not as a fallback, but as a validation partner. The agent should query both sources and cross-reference values before writing anything to a cell.
 
 ---
 
-### Technical Details
+### What changes
 
-**File:** `modal-app/agent/orchestrator.py`
+**1. New Modal secret: `perplexity-secret`**
 
-**Change 1 — Model (line 289):**
+You will need to create a secret in your Modal dashboard (modal.com > Settings > Secrets) called `perplexity-secret` with:
+- Key: `PERPLEXITY_API_KEY`
+- Value: Your Perplexity API key (from perplexity.ai/settings/api)
+
+**2. `modal-app/app.py`**
+
+Add the new secret to the secrets list (line 41):
 ```python
-# Before
-model="claude-sonnet-4-20250514",
-
-# After
-model="claude-opus-4-6",
+modal.Secret.from_name("perplexity-secret"),  # PERPLEXITY_API_KEY
 ```
 
-**Change 2 and 3 — System prompt (lines 98-124):**
+**3. `modal-app/agent/orchestrator.py` — Three additions:**
 
-Replace the current `SYSTEM_PROMPT` with:
-
+**(a) New tool definition** added to the `TOOLS` list (after `save_all_files`):
 ```python
-SYSTEM_PROMPT = """You are a financial data agent. Your task is to update Excel files containing financial statements with accurate, up-to-date data.
+{
+    "name": "web_search",
+    "description": "Search the web for financial data using Perplexity AI. Use this alongside browse_stockanalysis to cross-reference and validate values before inserting them. Returns AI-generated answers grounded in real web sources with citations.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "Specific financial query, e.g. 'Apple Inc Q4 2025 quarterly revenue net income total assets'"
+            }
+        },
+        "required": ["query"]
+    }
+}
+```
 
+**(b) New handler** in `handle_tool_call` (before the `else` branch):
+```python
+elif tool_name == "web_search":
+    query = tool_input["query"]
+    api_key = os.environ.get("PERPLEXITY_API_KEY", "")
+    if not api_key:
+        return json.dumps({"error": "PERPLEXITY_API_KEY not configured"})
+
+    import httpx
+    response = httpx.post(
+        "https://api.perplexity.ai/chat/completions",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": "sonar-pro",
+            "messages": [
+                {"role": "system", "content": "You are a financial data assistant. Provide precise numerical financial data. Always give fully written out absolute numbers (e.g., 394328000000 not 394.33B). Cite your sources."},
+                {"role": "user", "content": query},
+            ],
+        },
+        timeout=30,
+    )
+
+    if response.status_code == 200:
+        data = response.json()
+        answer = data["choices"][0]["message"]["content"]
+        citations = data.get("citations", [])
+        context.data_sources.append("perplexity-web-search")
+        return json.dumps({"answer": answer, "citations": citations})
+    else:
+        return json.dumps({"error": f"Perplexity API error: {response.status_code}"})
+```
+
+**(c) Updated SYSTEM_PROMPT** — Revised workflow and new section on dual-source validation:
+
+The workflow steps change from a linear StockAnalysis-only approach to:
+
+```
 WORKFLOW:
-1. First, use analyze_excel to understand the structure of each file you need to update
+1. Use analyze_excel to understand the structure of each file you need to update
 2. Identify ONLY empty cells that need to be filled in
-3. Use browse_stockanalysis to get the latest financial data from StockAnalysis.com
-4. Use update_excel_cell to fill in ONLY empty cells with the correct values
-5. Call save_all_files when done
-
-CRITICAL RULES — READ CAREFULLY:
-
-DO NOT EDIT EXISTING DATA:
-- You must NEVER modify, overwrite, or change any cell that already contains a value
-- ONLY populate cells that are currently empty/blank
-- If a cell already has data — even if you believe it is incorrect or outdated — leave it untouched
-- This is the single most important rule. Violating it will corrupt the files.
-
-NUMBER FORMAT — FULLY WRITTEN OUT VALUES:
-- All values in these Excel files are fully written out in absolute terms
-- For example: revenue of 394.33 billion is stored as 394328000000, NOT as 394.33 or 394328
-- When you insert a value, write the complete number with no abbreviation
-- Do NOT use thousands, millions, or billions shorthand
-- Match this format exactly when inserting new data
-
-DATA ACCURACY:
-- Match row labels carefully (Revenue, Net Income, Total Assets, etc.)
-- Match column headers to the correct fiscal periods
-- If you cannot find accurate data for a cell, leave it empty rather than guessing
-- Be careful to distinguish between annual and quarterly data
-- Always verify the data you're inserting matches the expected format and period
-
-FILES AVAILABLE:
-- financials-annual-income: Annual income statement data
-- financials-annual-balance: Annual balance sheet data
-- financials-annual-cashflow: Annual cash flow statement data
-- financials-quarterly-income: Quarterly income statement data
-- financials-quarterly-balance: Quarterly balance sheet data
-- financials-quarterly-cashflow: Quarterly cash flow statement data
-- standardized-annual-*: Standardized versions of the above
-- standardized-quarterly-*: Standardized versions of the above
-"""
+3. Use BOTH browse_stockanalysis AND web_search to gather financial data
+4. Cross-reference values from both sources before writing anything
+5. Use update_excel_cell to fill in ONLY empty cells with verified values
+6. Call save_all_files when done
 ```
 
-**Change 3 (continued) — User message (lines 268-275):**
+New section added to the prompt:
 
-Update the instruction at the end of the user message from:
-
-```python
-Please:
-1. Review the file structures above
-2. Identify cells that need to be updated with latest financial data
-3. Browse StockAnalysis.com to get the data
-4. Update the appropriate cells
-5. Save all files when done
-
-Focus on filling in any empty cells or updating any data that appears outdated.
+```
+DUAL-SOURCE VALIDATION:
+- You have two equal data sources: browse_stockanalysis and web_search
+- For every data point you intend to insert, gather it from BOTH sources
+- If both sources agree on a value, use it
+- If the sources disagree, investigate further with additional web_search queries
+- If you still cannot confirm a value with confidence, leave the cell empty
+- This cross-referencing is mandatory — do NOT rely on a single source alone
 ```
 
-to:
+**(d) Updated user message** — Step 3 changes to reflect dual sourcing:
 
-```python
-Please:
-1. Review the file structures above
-2. Identify ONLY cells that are currently EMPTY and need financial data
-3. Browse StockAnalysis.com to get the data
-4. Fill in ONLY empty cells — do NOT modify any cell that already has a value
-5. Save all files when done
-
-IMPORTANT: Only fill empty cells. Do NOT edit, overwrite, or modify any pre-existing data. All numeric values must be fully written out (e.g., 394328000000 not 394.33B).
 ```
+3. Use BOTH StockAnalysis.com AND web search to get and cross-reference the data
+4. Only insert values that are corroborated by both sources
+```
+
+---
+
+### Files modified
+
+| File | Change |
+|---|---|
+| `modal-app/app.py` | Add `perplexity-secret` to secrets list |
+| `modal-app/agent/orchestrator.py` | Add tool definition, handler, and update system/user prompts for dual-source validation |
+
+### Secret setup required
+
+Create `perplexity-secret` in the Modal dashboard with key `PERPLEXITY_API_KEY` before deploying.
