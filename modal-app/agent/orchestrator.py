@@ -252,28 +252,31 @@ EMPTY CELLS NEEDING DATA ({len(empty_cells)} total):
 
 WORKFLOW:
 1. Check if a new column needs to be inserted:
-   - If the report_date is NEWER than the leftmost date column (B1), call insert_new_period_column
+   - If the NEW COLUMN INSERTION REQUIRED section appears above, you MUST call insert_new_period_column FIRST
    - Determine the correct date_header (the report_date) and period_header (e.g. "Q4 2026" for quarterly, "FY 2026" for annual)
-   - After insertion, proceed to fill the newly created empty cells in column B
+   - After insertion, the tool returns a row_map telling you exactly which cells to fill (e.g. B3=Total Assets, B4=Current Assets...)
 2. If no new column is needed and there are no empty cells, respond with "FILE COMPLETE"
 3. Call browse_stockanalysis with the parameters above to navigate to the matching page
 4. Call extract_page_with_vision to read the financial data from the screenshot
-5. Call web_search to cross-reference values from a second source (Perplexity)
-6. Use note_finding to record gathered data and validation results
-7. Use update_excel_cell to fill cells with dual-source verified values
-8. When done, respond with "FILE COMPLETE"
+5. Match the extracted data to the row labels from the file/row_map
+6. Use update_excel_cell to fill ALL cells in one go — batch as many calls as possible per iteration
+7. When done, respond with "FILE COMPLETE"
 
-DUAL-SOURCE VALIDATION:
-- For every data point, gather it from BOTH StockAnalysis (via vision) AND Perplexity web_search
-- If both sources agree, use the value
-- If they disagree, investigate further or leave the cell empty
-- Record your validation reasoning with note_finding
+IMPORTANT — FOR NEW COLUMN INSERTION:
+- After inserting the column, you get a row_map with exact cell references and labels
+- Browse StockAnalysis ONCE, extract data ONCE, then batch-fill all cells
+- Do NOT waste iterations on dual-source validation — use StockAnalysis as the primary source
+- You can optionally use web_search for a quick sanity check but it is NOT required for insertion
+- Speed is critical: you have limited iterations, so fill cells efficiently
+
+FOR FILLING EXISTING EMPTY CELLS (no insertion):
+- Use dual-source validation: gather from StockAnalysis AND Perplexity web_search
+- If both sources agree, use the value; if they disagree, investigate or leave empty
 
 CRITICAL RULES:
-- When inserting a new column, ONLY fill rows that had data in adjacent columns
+- When inserting a new column, ONLY fill rows listed in the row_map
 - When filling empty cells (no insertion), NEVER modify cells that already contain values
 - All numeric values must be fully written out (e.g., 394328000000 not 394.33B)
-- If you cannot confirm a value from two sources, leave the cell empty
 - Match row labels and column headers carefully to the correct fiscal periods
 - The update_excel_cell tool is pre-configured for the current file — just provide sheet_name, cell_ref, and value
 """
@@ -461,6 +464,15 @@ def handle_tool_call(context: AgentContext, tool_name: str, tool_input: dict) ->
 
         if result.get("success"):
             context.files_modified.add(bucket_name)
+            # Re-analyze the file after insertion so agent sees updated schema
+            try:
+                updater.save()  # Save so analyze reads the updated file
+                from .schema import analyze_excel_file_full, format_full_schema_for_llm
+                refreshed = analyze_excel_file_full(context.files[bucket_name])
+                refreshed_schema = format_full_schema_for_llm(refreshed)
+                result["updated_schema"] = refreshed_schema
+            except Exception as e:
+                print(f"  ⚠️  Could not refresh schema after insertion: {e}")
 
         return json.dumps(result)
 
@@ -631,8 +643,8 @@ def run_agent(ticker: str, report_date: str, timing: str) -> dict[str, Any]:
                 # Fresh message history for each file
                 messages = [{"role": "user", "content": f"Begin processing {file_name} for {ticker}. Report date: {report_date}, timing: {timing}."}]
 
-                # Sub-loop for this file (up to 10 iterations)
-                max_file_iterations = 10
+                # Sub-loop: 15 iterations for files needing column insertion, 10 otherwise
+                max_file_iterations = 15 if needs_new_column else 10
                 for iteration in range(1, max_file_iterations + 1):
                     total_iterations += 1
                     iter_start = time.time()

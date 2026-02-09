@@ -4,6 +4,7 @@ Excel file updater using openpyxl.
 Handles updating specific cells in Excel files based on AI instructions.
 """
 
+from copy import copy
 from pathlib import Path
 from typing import Any
 import openpyxl
@@ -112,22 +113,41 @@ class ExcelUpdater:
             sheet.cell(row=2, column=2).value = period_header
             self.changes_made += 2
 
+            # Copy header styling from column C (the shifted original) to new column B
+            for row in [1, 2]:
+                source_cell = sheet.cell(row=row, column=3)
+                target_cell = sheet.cell(row=row, column=2)
+                target_cell.font = copy(source_cell.font)
+                target_cell.fill = copy(source_cell.fill)
+                target_cell.alignment = copy(source_cell.alignment)
+                target_cell.border = copy(source_cell.border)
+                target_cell.number_format = source_cell.number_format
+
             # Scan column C (the old column B, now shifted right) to find rows with data
-            # These are the rows that need new values in column B
+            # Build a row_map with labels from column A for direct agent guidance
             data_rows = []
+            row_map = []
             for row_idx in range(3, (sheet.max_row or 2) + 1):
                 cell_c = sheet.cell(row=row_idx, column=3)
                 if cell_c.value is not None:
                     data_rows.append(row_idx)
+                    label = sheet.cell(row=row_idx, column=1).value or ""
+                    row_map.append({"row": row_idx, "label": str(label).strip(), "cell": f"B{row_idx}"})
 
             print(f"Inserted new column B in {sheet_name}: {date_header} / {period_header}")
             print(f"  {len(data_rows)} rows need data (rows with values in adjacent column)")
 
+            # Build a human-readable cell list for the agent
+            cell_list = ", ".join(f"B{r} ({m['label']})" for r, m in zip(data_rows[:50], row_map[:50]))
+            if len(data_rows) > 50:
+                cell_list += f"... ({len(data_rows)} total)"
+
             return {
                 "success": True,
                 "data_rows": data_rows,
+                "row_map": row_map,
                 "total_rows_needing_data": len(data_rows),
-                "message": f"New column B inserted with headers '{date_header}' / '{period_header}'. Fill cells B3-B{data_rows[-1] if data_rows else 2} for rows that had data in the previous column.",
+                "message": f"New column B inserted with headers '{date_header}' / '{period_header}'. Fill these cells: {cell_list}",
             }
 
         except Exception as e:
