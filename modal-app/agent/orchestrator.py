@@ -2,11 +2,12 @@
 Agent orchestrator using Anthropic Claude.
 
 Coordinates the agentic workflow:
-1. Analyze Excel schemas
-2. Browse StockAnalysis.com (persistent browser session)
-3. Extract data via Gemini vision
-4. Track findings in scratchpad
-5. Update files with dual-source validated data
+1. Process Excel files one at a time (12 sequential sub-runs)
+2. Inject full cell data for only the current file
+3. Browse StockAnalysis.com (persistent browser session)
+4. Extract data via Gemini vision
+5. Track findings in scratchpad (re-injected each iteration)
+6. Update files with dual-source validated data
 """
 
 import os
@@ -20,27 +21,45 @@ import anthropic
 import httpx
 
 from .storage import StorageClient
-from .schema import analyze_all_files, format_schema_for_llm
+from .schema import analyze_excel_file_full, format_full_schema_for_llm
 from .browser import StockAnalysisBrowser
 from .updater import ExcelUpdater
 
 
-# Tools available to the agent
+# Ordered list of files to process sequentially
+FILE_ORDER = [
+    "standardized-annual-income",
+    "standardized-annual-balance",
+    "standardized-annual-cashflow",
+    "standardized-quarterly-income",
+    "standardized-quarterly-balance",
+    "standardized-quarterly-cashflow",
+    "financials-annual-income",
+    "financials-annual-balance",
+    "financials-annual-cashflow",
+    "financials-quarterly-income",
+    "financials-quarterly-balance",
+    "financials-quarterly-cashflow",
+]
+
+# Maps file names to browse_stockanalysis parameters
+FILE_TO_BROWSE_PARAMS = {
+    "standardized-annual-income": {"statement_type": "income", "period": "annual", "data_type": "standardized"},
+    "standardized-annual-balance": {"statement_type": "balance", "period": "annual", "data_type": "standardized"},
+    "standardized-annual-cashflow": {"statement_type": "cashflow", "period": "annual", "data_type": "standardized"},
+    "standardized-quarterly-income": {"statement_type": "income", "period": "quarterly", "data_type": "standardized"},
+    "standardized-quarterly-balance": {"statement_type": "balance", "period": "quarterly", "data_type": "standardized"},
+    "standardized-quarterly-cashflow": {"statement_type": "cashflow", "period": "quarterly", "data_type": "standardized"},
+    "financials-annual-income": {"statement_type": "income", "period": "annual", "data_type": "as-reported"},
+    "financials-annual-balance": {"statement_type": "balance", "period": "annual", "data_type": "as-reported"},
+    "financials-annual-cashflow": {"statement_type": "cashflow", "period": "annual", "data_type": "as-reported"},
+    "financials-quarterly-income": {"statement_type": "income", "period": "quarterly", "data_type": "as-reported"},
+    "financials-quarterly-balance": {"statement_type": "balance", "period": "quarterly", "data_type": "as-reported"},
+    "financials-quarterly-cashflow": {"statement_type": "cashflow", "period": "quarterly", "data_type": "as-reported"},
+}
+
+# Tools available to the agent (per-file context — no analyze_excel needed)
 TOOLS = [
-    {
-        "name": "analyze_excel",
-        "description": "Analyze the structure and contents of an Excel file. Returns sheet names, headers, sample data, and empty cells that might need to be filled.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "bucket_name": {
-                    "type": "string",
-                    "description": "The bucket/file identifier (e.g., 'financials-annual-income')"
-                }
-            },
-            "required": ["bucket_name"]
-        }
-    },
     {
         "name": "browse_stockanalysis",
         "description": "Navigate to a specific financial statement page on StockAnalysis.com and take a full-page screenshot. The browser session persists across calls (login only happens once). After calling this, use extract_page_with_vision to read the data from the screenshot.",
@@ -82,13 +101,13 @@ TOOLS = [
     },
     {
         "name": "note_finding",
-        "description": "Record a finding or intermediate result to your scratchpad. Use this to track what data you've gathered, what cells are empty, what values you plan to insert, and validation results. Your notes persist across iterations.",
+        "description": "Record a finding or intermediate result to your scratchpad. Use this to track what data you've gathered, what cells are empty, what values you plan to insert, and validation results. Your notes persist across iterations AND across files.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "category": {
                     "type": "string",
-                    "enum": ["data_gathered", "empty_cells", "validation", "decision", "error"],
+                    "enum": ["data_gathered", "empty_cells", "validation", "decision", "error", "file_complete"],
                     "description": "Category of the note"
                 },
                 "content": {
@@ -101,37 +120,24 @@ TOOLS = [
     },
     {
         "name": "update_excel_cell",
-        "description": "Update a specific cell in an Excel file with a new value.",
+        "description": "Update a specific cell in the CURRENT Excel file with a new value. The bucket_name is pre-set to the current file.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "bucket_name": {
-                    "type": "string",
-                    "description": "The bucket/file identifier (e.g., 'financials-annual-income')"
-                },
                 "sheet_name": {
                     "type": "string",
                     "description": "Name of the Excel sheet"
                 },
                 "cell_ref": {
                     "type": "string",
-                    "description": "Cell reference like 'A1' or 'B5'"
+                    "description": "Cell reference like 'B2' or 'C5'"
                 },
                 "value": {
                     "type": ["string", "number"],
                     "description": "The value to set"
                 }
             },
-            "required": ["bucket_name", "sheet_name", "cell_ref", "value"]
-        }
-    },
-    {
-        "name": "save_all_files",
-        "description": "Save all modified Excel files and upload them back to storage. Call this when you're done making updates.",
-        "input_schema": {
-            "type": "object",
-            "properties": {},
-            "required": []
+            "required": ["sheet_name", "cell_ref", "value"]
         }
     },
     {
@@ -151,27 +157,55 @@ TOOLS = [
 ]
 
 
-SYSTEM_PROMPT = """You are a financial data agent. Your task is to update Excel files containing financial statements with accurate, up-to-date data.
+def build_scratchpad_summary(notes: list[dict]) -> str:
+    """Build a summary of all scratchpad notes for context re-injection."""
+    if not notes:
+        return ""
+
+    summary = "## YOUR SCRATCHPAD (from previous work)\n"
+    for note in notes:
+        summary += f"- [{note['category']}] {note['content']}\n"
+    return summary
+
+
+def build_file_system_prompt(
+    ticker: str,
+    file_name: str,
+    file_index: int,
+    total_files: int,
+    full_schema: str,
+    empty_cells: list[str],
+    browse_params: dict,
+    scratchpad_summary: str,
+) -> str:
+    """Build a focused system prompt for processing a single file."""
+    prompt = f"""You are a financial data agent. You are processing file {file_index}/{total_files} for ticker {ticker}.
+
+CURRENT FILE: {file_name}
+This is the ONLY file you need to work on right now. Focus entirely on filling empty cells in this file.
+
+MATCHING StockAnalysis.com PAGE:
+- statement_type: {browse_params['statement_type']}
+- period: {browse_params['period']}
+- data_type: {browse_params['data_type']}
+Call browse_stockanalysis with these exact parameters to get the data.
+
+COMPLETE FILE DATA:
+{full_schema}
+
+EMPTY CELLS NEEDING DATA ({len(empty_cells)} total):
+{', '.join(empty_cells) if empty_cells else 'None — this file is already complete.'}
+
+{scratchpad_summary}
 
 WORKFLOW:
-1. Use analyze_excel to understand the structure of each file you need to update
-2. Use note_finding to record which cells are empty and need data
-3. Use browse_stockanalysis to navigate to the correct financial page, then extract_page_with_vision to read the data
-4. Use web_search to cross-reference values from a second source
+1. If there are no empty cells, respond with "FILE COMPLETE" immediately
+2. Call browse_stockanalysis with the parameters above to navigate to the matching page
+3. Call extract_page_with_vision to read the financial data from the screenshot
+4. Call web_search to cross-reference values from a second source (Perplexity)
 5. Use note_finding to record gathered data and validation results
-6. Use update_excel_cell to fill in ONLY empty cells with dual-source verified values
-7. Call save_all_files when done
-
-TOOL USAGE TIPS:
-- browse_stockanalysis navigates and screenshots the page. It does NOT return table data.
-- After browse_stockanalysis, ALWAYS call extract_page_with_vision to actually read the financial data from the screenshot.
-- Use note_finding liberally to track your progress, data gathered, and decisions made.
-- Your notes persist across iterations so you can refer back to them.
-
-URL MAPPING (handled automatically by browse_stockanalysis):
-- statement_type "income" + period "quarterly" + data_type "as-reported" => /financials/?p=quarterly&type=as-reported
-- statement_type "balance" + period "annual" + data_type "standardized" => /financials/balance-sheet/
-- etc.
+6. Use update_excel_cell to fill ONLY empty cells with dual-source verified values
+7. When done filling all cells you can verify, respond with "FILE COMPLETE"
 
 DUAL-SOURCE VALIDATION:
 - For every data point, gather it from BOTH StockAnalysis (via vision) AND Perplexity web_search
@@ -182,15 +216,11 @@ DUAL-SOURCE VALIDATION:
 CRITICAL RULES:
 - NEVER modify cells that already contain values — ONLY fill empty cells
 - All numeric values must be fully written out (e.g., 394328000000 not 394.33B)
-- If you cannot confirm a value, leave the cell empty
+- If you cannot confirm a value from two sources, leave the cell empty
 - Match row labels and column headers carefully to the correct fiscal periods
-
-FILES AVAILABLE:
-- financials-annual-income, financials-annual-balance, financials-annual-cashflow
-- financials-quarterly-income, financials-quarterly-balance, financials-quarterly-cashflow
-- standardized-annual-income, standardized-annual-balance, standardized-annual-cashflow
-- standardized-quarterly-income, standardized-quarterly-balance, standardized-quarterly-cashflow
+- The update_excel_cell tool is pre-configured for the current file — just provide sheet_name, cell_ref, and value
 """
+    return prompt
 
 
 class AgentContext:
@@ -206,14 +236,20 @@ class AgentContext:
         self.data_sources: list[str] = []
         self.files_modified: set[str] = set()
 
-        # Scratchpad for agent notes
+        # Scratchpad for agent notes — persists across ALL files
         self.notes: list[dict] = []
+
+        # Track which file is currently being processed
+        self.current_file: str | None = None
 
         # Persistent browser (initialized lazily on first browse call)
         self.browser: StockAnalysisBrowser | None = None
 
         # Latest screenshot bytes from browser
         self.latest_screenshot: bytes | None = None
+
+        # Track completed files
+        self.completed_files: list[str] = []
 
     def get_browser(self) -> StockAnalysisBrowser:
         """Get or create the persistent browser instance."""
@@ -247,18 +283,7 @@ class AgentContext:
 def handle_tool_call(context: AgentContext, tool_name: str, tool_input: dict) -> str:
     """Handle a tool call from the agent."""
 
-    if tool_name == "analyze_excel":
-        bucket_name = tool_input["bucket_name"]
-        if bucket_name not in context.files:
-            return json.dumps({"error": f"File {bucket_name} not found"})
-
-        if bucket_name not in context.analyses:
-            from .schema import analyze_excel_file
-            context.analyses[bucket_name] = analyze_excel_file(context.files[bucket_name])
-
-        return json.dumps(context.analyses[bucket_name], indent=2)
-
-    elif tool_name == "browse_stockanalysis":
+    if tool_name == "browse_stockanalysis":
         statement_type = tool_input["statement_type"]
         period = tool_input["period"]
         data_type = tool_input["data_type"]
@@ -331,15 +356,23 @@ def handle_tool_call(context: AgentContext, tool_name: str, tool_input: dict) ->
     elif tool_name == "note_finding":
         category = tool_input["category"]
         content = tool_input["content"]
-        note = {"category": category, "content": content, "timestamp": time.time()}
+        note = {
+            "category": category,
+            "content": content,
+            "file": context.current_file or "global",
+            "timestamp": time.time(),
+        }
         context.notes.append(note)
         print(f"  📝 [{category}] {content[:200]}")
         return json.dumps({"recorded": True, "total_notes": len(context.notes)})
 
     elif tool_name == "update_excel_cell":
-        bucket_name = tool_input["bucket_name"]
-        updater = context.get_updater(bucket_name)
+        # Pre-set bucket_name to the current file
+        bucket_name = context.current_file
+        if not bucket_name:
+            return json.dumps({"error": "No current file set"})
 
+        updater = context.get_updater(bucket_name)
         if not updater:
             return json.dumps({"error": f"Cannot open file {bucket_name}"})
 
@@ -353,18 +386,6 @@ def handle_tool_call(context: AgentContext, tool_name: str, tool_input: dict) ->
             context.files_modified.add(bucket_name)
 
         return json.dumps({"success": success})
-
-    elif tool_name == "save_all_files":
-        saved = 0
-        for bucket_name, updater in context.updaters.items():
-            if bucket_name in context.files_modified:
-                if updater.save():
-                    saved += 1
-
-        return json.dumps({
-            "files_saved": saved,
-            "files_modified": list(context.files_modified)
-        })
 
     elif tool_name == "web_search":
         query = tool_input["query"]
@@ -401,9 +422,30 @@ def handle_tool_call(context: AgentContext, tool_name: str, tool_input: dict) ->
         return json.dumps({"error": f"Unknown tool: {tool_name}"})
 
 
+def save_single_file(context: AgentContext, storage: StorageClient, bucket_name: str) -> bool:
+    """Save and upload a single modified file."""
+    if bucket_name not in context.files_modified:
+        return False
+
+    updater = context.updaters.get(bucket_name)
+    if updater:
+        updater.save()
+        updater.close()
+        # Remove from updaters so it won't be closed again
+        del context.updaters[bucket_name]
+
+    if bucket_name in context.files:
+        return storage.upload_file(
+            bucket_name,
+            f"{context.ticker}.xlsx",
+            context.files[bucket_name]
+        )
+    return False
+
+
 def run_agent(ticker: str, report_date: str, timing: str) -> dict[str, Any]:
     """
-    Run the agentic workflow for a ticker.
+    Run the agentic workflow for a ticker, processing one file at a time.
 
     Args:
         ticker: Stock ticker symbol
@@ -433,138 +475,157 @@ def run_agent(ticker: str, report_date: str, timing: str) -> dict[str, Any]:
 
         print(f"Downloaded {len(files)} files")
 
-        # Analyze all files upfront for context
-        analyses = analyze_all_files(files)
-        schema_context = format_schema_for_llm(analyses)
-
         # Initialize agent context
         context = AgentContext(ticker, work_dir, files)
-        context.analyses = analyses
-
-        # Prepare initial message
-        user_message = f"""Process the financial files for ticker: {ticker}
-Report date: {report_date}
-Market timing: {timing}
-
-Here is an overview of the file schemas:
-{schema_context}
-
-Please:
-1. Review the file structures above
-2. Use note_finding to record which cells are empty and need data
-3. Use browse_stockanalysis + extract_page_with_vision to get financial data from StockAnalysis.com
-4. Use web_search to cross-reference values
-5. Use note_finding to track your validation results
-6. Fill in ONLY empty cells with dual-source verified values
-7. Save all files when done
-
-IMPORTANT: Only fill empty cells. Do NOT edit, overwrite, or modify any pre-existing data. All numeric values must be fully written out (e.g., 394328000000 not 394.33B)."""
-
-        messages = [{"role": "user", "content": user_message}]
-
-        # Run the agent loop
-        max_iterations = 30
-        iteration = 0
         start_time = time.time()
+        total_iterations = 0
+        files_updated = 0
 
         try:
-            while iteration < max_iterations:
-                iteration += 1
-                iter_start = time.time()
+            # Process files one at a time
+            for file_idx, file_name in enumerate(FILE_ORDER, 1):
+                if file_name not in files:
+                    print(f"\n⏭️  Skipping {file_name} (not downloaded)")
+                    continue
+
+                context.current_file = file_name
+                browse_params = FILE_TO_BROWSE_PARAMS[file_name]
+
+                # Build rich schema for ONLY this file
                 print(f"\n{'='*60}")
-                print(f"--- Agent iteration {iteration}/{max_iterations} ---")
+                print(f"📁 Processing file {file_idx}/{len(FILE_ORDER)}: {file_name}")
                 print(f"{'='*60}")
 
-                response = client.messages.create(
-                    model="claude-opus-4-6",
-                    max_tokens=8192,
-                    system=SYSTEM_PROMPT,
-                    tools=TOOLS,
-                    messages=messages,
+                file_analysis = analyze_excel_file_full(files[file_name])
+                full_schema = format_full_schema_for_llm(file_analysis)
+
+                # Collect empty cells list
+                empty_cells = []
+                for sheet in file_analysis.get("sheets", []):
+                    empty_cells.extend(sheet.get("empty_cells", []))
+
+                # Skip files with no empty cells
+                if not empty_cells:
+                    print(f"  ✅ No empty cells — skipping")
+                    context.completed_files.append(file_name)
+                    context.notes.append({
+                        "category": "file_complete",
+                        "content": f"{file_name}: No empty cells, skipped.",
+                        "file": file_name,
+                        "timestamp": time.time(),
+                    })
+                    continue
+
+                print(f"  📊 {len(empty_cells)} empty cells to fill")
+
+                # Build scratchpad summary from all previous work
+                scratchpad_summary = build_scratchpad_summary(context.notes)
+
+                # Build focused system prompt for this file
+                system_prompt = build_file_system_prompt(
+                    ticker=ticker,
+                    file_name=file_name,
+                    file_index=file_idx,
+                    total_files=len(FILE_ORDER),
+                    full_schema=full_schema,
+                    empty_cells=empty_cells,
+                    browse_params=browse_params,
+                    scratchpad_summary=scratchpad_summary,
                 )
 
-                # Print agent reasoning (text blocks)
-                for block in response.content:
-                    if hasattr(block, "text"):
-                        print(f"\n💭 Agent reasoning:\n{block.text[:500]}")
-                        if len(block.text) > 500:
-                            print(f"  ... ({len(block.text)} chars total)")
+                # Fresh message history for each file
+                messages = [{"role": "user", "content": f"Begin processing {file_name} for {ticker}. Report date: {report_date}, timing: {timing}."}]
 
-                # Process response
-                if response.stop_reason == "end_turn":
-                    elapsed = time.time() - iter_start
-                    print(f"\n✅ Agent finished (iteration took {elapsed:.1f}s)")
-                    break
+                # Sub-loop for this file (up to 10 iterations)
+                max_file_iterations = 10
+                for iteration in range(1, max_file_iterations + 1):
+                    total_iterations += 1
+                    iter_start = time.time()
+                    print(f"\n  --- {file_name} iteration {iteration}/{max_file_iterations} ---")
 
-                if response.stop_reason == "tool_use":
-                    # Handle tool calls
-                    assistant_content = response.content
-                    tool_results = []
+                    response = client.messages.create(
+                        model="claude-opus-4-6",
+                        max_tokens=8192,
+                        system=system_prompt,
+                        tools=TOOLS,
+                        messages=messages,
+                    )
 
-                    for block in assistant_content:
-                        if block.type == "tool_use":
-                            print(f"\n🔧 Tool: {block.name}")
-                            print(f"   Input: {json.dumps(block.input)[:200]}")
+                    # Print agent reasoning
+                    for block in response.content:
+                        if hasattr(block, "text"):
+                            print(f"\n  💭 Agent: {block.text[:500]}")
+                            if len(block.text) > 500:
+                                print(f"    ... ({len(block.text)} chars total)")
 
-                            result = handle_tool_call(context, block.name, block.input)
+                    # Check if agent is done with this file
+                    if response.stop_reason == "end_turn":
+                        elapsed = time.time() - iter_start
+                        print(f"  ✅ File complete ({elapsed:.1f}s)")
+                        break
 
-                            # Print result summary
-                            result_preview = result[:300] if len(result) <= 300 else result[:300] + "..."
-                            print(f"   Result: {result_preview}")
+                    if response.stop_reason == "tool_use":
+                        assistant_content = response.content
+                        tool_results = []
 
-                            tool_results.append({
-                                "type": "tool_result",
-                                "tool_use_id": block.id,
-                                "content": result,
-                            })
+                        for block in assistant_content:
+                            if block.type == "tool_use":
+                                print(f"  🔧 Tool: {block.name}")
+                                print(f"     Input: {json.dumps(block.input)[:200]}")
 
-                    # Add assistant response and tool results to messages
-                    messages.append({"role": "assistant", "content": assistant_content})
-                    messages.append({"role": "user", "content": tool_results})
+                                result = handle_tool_call(context, block.name, block.input)
 
-                    elapsed = time.time() - iter_start
-                    print(f"\n⏱️  Iteration {iteration} took {elapsed:.1f}s")
+                                result_preview = result[:300] if len(result) <= 300 else result[:300] + "..."
+                                print(f"     Result: {result_preview}")
 
-                else:
-                    print(f"Unexpected stop reason: {response.stop_reason}")
-                    break
+                                tool_results.append({
+                                    "type": "tool_result",
+                                    "tool_use_id": block.id,
+                                    "content": result,
+                                })
 
-            # Print final summary
+                        messages.append({"role": "assistant", "content": assistant_content})
+                        messages.append({"role": "user", "content": tool_results})
+
+                        elapsed = time.time() - iter_start
+                        print(f"  ⏱️  Iteration took {elapsed:.1f}s")
+                    else:
+                        print(f"  Unexpected stop reason: {response.stop_reason}")
+                        break
+
+                # Save this file immediately after processing
+                context.completed_files.append(file_name)
+                if file_name in context.files_modified:
+                    if save_single_file(context, storage, file_name):
+                        files_updated += 1
+                        print(f"  📤 Uploaded {file_name}")
+                    else:
+                        print(f"  ⚠️  Failed to upload {file_name}")
+
+                print(f"\n  Progress: {len(context.completed_files)}/{len(FILE_ORDER)} files processed")
+
+            # Final summary
             total_time = time.time() - start_time
             print(f"\n{'='*60}")
-            print(f"AGENT COMPLETE — {iteration} iterations in {total_time:.1f}s")
+            print(f"AGENT COMPLETE — {total_iterations} total iterations in {total_time:.1f}s")
+            print(f"Files updated: {files_updated}/{len(FILE_ORDER)}")
             print(f"{'='*60}")
 
             # Print all scratchpad notes
             if context.notes:
                 print(f"\n📋 Scratchpad ({len(context.notes)} notes):")
                 for i, note in enumerate(context.notes, 1):
-                    print(f"  {i}. [{note['category']}] {note['content'][:200]}")
+                    print(f"  {i}. [{note['category']}] ({note.get('file', '?')}) {note['content'][:200]}")
 
-            # Upload modified files back to storage
-            files_updated = 0
-            if context.files_modified:
-                # Close all workbooks first
-                context.close_all()
-
-                # Upload only modified files
-                for bucket_name in context.files_modified:
-                    if bucket_name in context.files:
-                        if storage.upload_file(
-                            bucket_name,
-                            f"{ticker}.xlsx",
-                            context.files[bucket_name]
-                        ):
-                            files_updated += 1
-            else:
-                context.close_all()
+            context.close_all()
 
             return {
                 "success": True,
                 "files_updated": files_updated,
                 "data_sources": list(set(context.data_sources)),
-                "iterations": iteration,
+                "iterations": total_iterations,
                 "notes_count": len(context.notes),
+                "completed_files": context.completed_files,
             }
 
         except Exception as e:
@@ -572,5 +633,6 @@ IMPORTANT: Only fill empty cells. Do NOT edit, overwrite, or modify any pre-exis
             return {
                 "success": False,
                 "error": str(e),
-                "files_updated": 0,
+                "files_updated": files_updated,
+                "completed_files": context.completed_files,
             }
