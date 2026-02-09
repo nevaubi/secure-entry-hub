@@ -1,45 +1,46 @@
 
 
-## Fix: Mount agent to a Python-native path (no more sys.path hacks)
+## Fix: Add `public/` to storage download URL path
 
-### Why it keeps failing
+### Root Cause
 
-The `sys.path.insert(0, "/root")` fix only takes effect at runtime inside the function body. But `add_local_dir` places files during image build, and Python's default `sys.path` in Modal's Debian slim image does NOT include `/root`. The error persists because the module resolution still can't find the package.
+All 12 downloads fail with HTTP 400 because the download URL is missing the `public/` path segment. The buckets on your external storage (`auth.deltasage.ai`) are public buckets.
 
-### The real fix
+**Current URL built by code:**
+```
+{EXTERNAL_SUPABASE_URL}/storage/v1/object/financials-annual-income/PLTR.xlsx
+```
 
-Instead of fighting `sys.path`, mount the `agent/` directory directly into Python's `site-packages` where it will be found automatically -- no path manipulation needed.
+**Correct URL (matches your working example):**
+```
+{EXTERNAL_SUPABASE_URL}/storage/v1/object/public/financials-annual-income/PLTR.xlsx
+```
 
 ### What changes
 
-**File: `modal-app/app.py`**
+**File: `modal-app/agent/storage.py`**
 
-1. Change the `add_local_dir` remote path from `/root/agent` to Python's site-packages:
+1. **Line 56** (download URL): Add `public/` to the path
 
 ```python
 # Before:
-.add_local_dir("agent", remote_path="/root/agent")
+url = f"{self.supabase_url}/storage/v1/object/{bucket}/{file_path}"
 
 # After:
-.add_local_dir("agent", remote_path="/usr/local/lib/python3.11/site-packages/agent")
+url = f"{self.supabase_url}/storage/v1/object/public/{bucket}/{file_path}"
 ```
 
-2. Remove the `sys.path` hack from `process_ticker` (lines 65-66):
+2. **Line 87** (upload URL): Keep using the authenticated endpoint (uploads require auth, no `public/` needed) -- no change needed here.
 
-```python
-# Remove these two lines:
-import sys
-sys.path.insert(0, "/root")
-```
+### Also verify
 
-### Why this works
-
-Python's `site-packages` is always on `sys.path` by default. By placing the `agent/` directory there, `from agent.orchestrator import run_agent` and all relative imports (`from .browser import ...`) work immediately with zero path manipulation.
+Make sure the `EXTERNAL_SUPABASE_URL` Modal secret is set to `https://auth.deltasage.ai` (matching the base domain from your working URL). If it's currently set to something else (like a `.supabase.co` URL), that would also cause failures.
 
 ### Files modified
 
 | File | Change |
 |---|---|
-| `modal-app/app.py` | Change `remote_path` to site-packages, remove `sys.path` hack |
+| `modal-app/agent/storage.py` | Add `public/` to download URL path on line 56 |
 
 After this change, redeploy with `modal deploy app.py` and re-test with `modal run app.py::test_single_ticker --ticker PLTR`.
+
