@@ -41,8 +41,11 @@ secrets = [
     modal.Secret.from_name("perplexity-secret"),  # PERPLEXITY_API_KEY
 ]
 
+# Mount the agent package so it's available in the container
+agent_mount = modal.Mount.from_local_dir("agent", remote_path="/root/agent")
 
-@app.function(image=image, secrets=secrets, timeout=600)
+
+@app.function(image=image, secrets=secrets, timeout=600, mounts=[agent_mount])
 def process_ticker(
     ticker: str,
     report_date: str,
@@ -115,7 +118,7 @@ def process_ticker(
         return {"success": False, "error": error_msg}
 
 
-@app.function(image=image, secrets=secrets, timeout=60)
+@app.function(image=image, secrets=secrets, timeout=60, mounts=[agent_mount])
 @modal.fastapi_endpoint(method="POST")
 def webhook(data: dict) -> dict:
     """
