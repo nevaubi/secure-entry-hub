@@ -30,7 +30,7 @@ image = (
         "fastapi[standard]>=0.115.0",
     )
     .run_commands("playwright install chromium", "playwright install-deps chromium")
-    .add_local_dir("agent", remote_path="/root/agent")
+    .add_local_dir("agent", remote_path="/usr/local/lib/python3.11/site-packages/agent")
 )
 
 # Secrets for API access
@@ -62,8 +62,6 @@ def process_ticker(
     Returns:
         dict with status, files_updated count, and any errors
     """
-    import sys
-    sys.path.insert(0, "/root")
     import httpx
     from agent.orchestrator import run_agent
 
