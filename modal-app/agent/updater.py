@@ -39,6 +39,17 @@ class ExcelUpdater:
             sheet = self.workbook[sheet_name]
             sheet[cell_ref] = value
             self.changes_made += 1
+
+            # Auto-copy formatting from column C when writing to column B
+            cell = sheet[cell_ref]
+            if cell.column == 2:  # Column B
+                source = sheet.cell(row=cell.row, column=3)  # Column C
+                cell.font = copy(source.font)
+                cell.fill = copy(source.fill)
+                cell.alignment = copy(source.alignment)
+                cell.border = copy(source.border)
+                cell.number_format = source.number_format
+
             print(f"Updated {sheet_name}!{cell_ref} = {value}")
             return True
 
