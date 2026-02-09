@@ -1,32 +1,65 @@
 
 
-## Configure Modal Webhook URL
+## Fix Two Critical Bugs in the Pipeline
 
-Store the Modal webhook URL (`https://admin-84170--excel-agent-webhook.modal.run`) as a backend secret so the `trigger-excel-agent` edge function can automatically use it.
+### Bug 1: Python Indentation Error in Agent Module Files
 
-### What will happen
+**The problem:** All 5 files in `modal-app/agent/` have an extra leading space on every single line. Python is whitespace-sensitive, so this will cause an `IndentationError` the moment Modal tries to import and run the agent code.
 
-1. **Add a new secret** called `MODAL_WEBHOOK_URL` with value `https://admin-84170--excel-agent-webhook.modal.run`
-2. No code changes are needed -- the `trigger-excel-agent` function already reads `MODAL_WEBHOOK_URL` from the environment on line 120:
-   ```typescript
-   const endpoint = modal_endpoint || Deno.env.get('MODAL_WEBHOOK_URL');
-   ```
+**Affected files:**
+- `modal-app/agent/__init__.py`
+- `modal-app/agent/orchestrator.py`
+- `modal-app/agent/browser.py`
+- `modal-app/agent/schema.py`
+- `modal-app/agent/storage.py`
+- `modal-app/agent/updater.py`
 
-### How it works after configuration
+Note: `modal-app/app.py` does NOT have this issue -- it was already fixed previously.
 
-- When the function is called (either manually or on schedule), it will:
-  1. Query the `earnings_calendar` table for today's tickers
-  2. Create `excel_processing_runs` records with `pending` status
-  3. Call the Modal webhook at your URL with the ticker list
-  4. Modal processes each ticker and calls back via `excel-agent-callback` to update status
+**The fix:** Remove the single leading space from every line in all 6 files. No logic changes, purely whitespace correction.
 
-### Testing
+---
 
-After the secret is added, we can test the full pipeline by calling the `trigger-excel-agent` function directly to verify the connection between your backend and Modal is working.
+### Bug 2: `before_after_market` Timing Mismatch
+
+**The problem:** The `trigger-excel-agent` edge function queries the `earnings_calendar` table using `"Before Market"` and `"After Market"` (with spaces), but the EODHD API stores them as `"BeforeMarket"` and `"AfterMarket"` (no spaces). This means the query always returns zero tickers, so the pipeline never runs.
+
+Current values in the database:
+- `BeforeMarket`
+- `AfterMarket`
+- `null` (some records have no timing)
+
+**The fix:** In `supabase/functions/trigger-excel-agent/index.ts`, change line 48 from:
+
+```text
+const marketTiming = timing === 'premarket' ? 'Before Market' : 'After Market';
+```
+
+to:
+
+```text
+const marketTiming = timing === 'premarket' ? 'BeforeMarket' : 'AfterMarket';
+```
+
+Additionally, for `afterhours` timing, we should also query for records where `before_after_market` is `null`, since some EODHD records lack this field. Those null-timing records should be treated as after-hours by default. This requires updating the query to use an `or` filter when timing is `afterhours`.
+
+---
 
 ### Technical Details
 
-- **Secret name**: `MODAL_WEBHOOK_URL`
-- **Secret value**: `https://admin-84170--excel-agent-webhook.modal.run`
-- **Used by**: `supabase/functions/trigger-excel-agent/index.ts` (line 120)
-- **No file changes required** -- only a secret needs to be added
+**Files to modify (7 total):**
+
+| File | Change |
+|---|---|
+| `modal-app/agent/__init__.py` | Remove leading space from every line |
+| `modal-app/agent/orchestrator.py` | Remove leading space from every line |
+| `modal-app/agent/browser.py` | Remove leading space from every line |
+| `modal-app/agent/schema.py` | Remove leading space from every line |
+| `modal-app/agent/storage.py` | Remove leading space from every line |
+| `modal-app/agent/updater.py` | Remove leading space from every line |
+| `supabase/functions/trigger-excel-agent/index.ts` | Fix timing values and add null handling |
+
+**Risk:** Low. The Python files are pure whitespace fixes with no logic changes. The edge function change is a two-value string correction plus a small query enhancement.
+
+**After these fixes:** The pipeline will correctly match tickers from the earnings calendar and the agent code will run without Python syntax errors on Modal.
+
