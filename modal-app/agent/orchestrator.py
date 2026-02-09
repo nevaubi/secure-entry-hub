@@ -3,21 +3,25 @@ Agent orchestrator using Anthropic Claude.
 
 Coordinates the agentic workflow:
 1. Analyze Excel schemas
-2. Determine what data is needed
-3. Browse for data
-4. Update files
+2. Browse StockAnalysis.com (persistent browser session)
+3. Extract data via Gemini vision
+4. Track findings in scratchpad
+5. Update files with dual-source validated data
 """
 
 import os
 import json
+import time
+import base64
 import tempfile
 from pathlib import Path
 from typing import Any
 import anthropic
+import httpx
 
 from .storage import StorageClient
 from .schema import analyze_all_files, format_schema_for_llm
-from .browser import extract_financials
+from .browser import StockAnalysisBrowser
 from .updater import ExcelUpdater
 
 
@@ -39,22 +43,60 @@ TOOLS = [
     },
     {
         "name": "browse_stockanalysis",
-        "description": "Browse StockAnalysis.com to extract financial statement data (income statement, balance sheet, cash flow) for the ticker. Returns structured financial data.",
+        "description": "Navigate to a specific financial statement page on StockAnalysis.com and take a full-page screenshot. The browser session persists across calls (login only happens once). After calling this, use extract_page_with_vision to read the data from the screenshot.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "statement_type": {
                     "type": "string",
-                    "enum": ["income-statement", "balance-sheet", "cash-flow-statement"],
-                    "description": "Type of financial statement to extract"
+                    "enum": ["income", "balance", "cashflow"],
+                    "description": "Type of financial statement"
                 },
                 "period": {
                     "type": "string",
                     "enum": ["annual", "quarterly"],
                     "description": "Annual or quarterly data"
+                },
+                "data_type": {
+                    "type": "string",
+                    "enum": ["standardized", "as-reported"],
+                    "description": "Whether to view standardized or as-reported data"
                 }
             },
-            "required": ["statement_type", "period"]
+            "required": ["statement_type", "period", "data_type"]
+        }
+    },
+    {
+        "name": "extract_page_with_vision",
+        "description": "Send the latest page screenshot to Gemini Flash to extract financial data as structured markdown. Call this after browse_stockanalysis to read the table data from the screenshot.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "instruction": {
+                    "type": "string",
+                    "description": "What to extract from the page, e.g. 'Extract the full financial table with all rows and columns as a markdown table. Include all numeric values exactly as shown.'"
+                }
+            },
+            "required": ["instruction"]
+        }
+    },
+    {
+        "name": "note_finding",
+        "description": "Record a finding or intermediate result to your scratchpad. Use this to track what data you've gathered, what cells are empty, what values you plan to insert, and validation results. Your notes persist across iterations.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "enum": ["data_gathered", "empty_cells", "validation", "decision", "error"],
+                    "description": "Category of the note"
+                },
+                "content": {
+                    "type": "string",
+                    "description": "The finding or observation to record"
+                }
+            },
+            "required": ["category", "content"]
         }
     },
     {
@@ -113,56 +155,46 @@ SYSTEM_PROMPT = """You are a financial data agent. Your task is to update Excel 
 
 WORKFLOW:
 1. Use analyze_excel to understand the structure of each file you need to update
-2. Identify ONLY empty cells that need to be filled in
-3. Use BOTH browse_stockanalysis AND web_search to gather financial data
-4. Cross-reference values from both sources before writing anything
-5. Use update_excel_cell to fill in ONLY empty cells with verified values
-6. Call save_all_files when done
+2. Use note_finding to record which cells are empty and need data
+3. Use browse_stockanalysis to navigate to the correct financial page, then extract_page_with_vision to read the data
+4. Use web_search to cross-reference values from a second source
+5. Use note_finding to record gathered data and validation results
+6. Use update_excel_cell to fill in ONLY empty cells with dual-source verified values
+7. Call save_all_files when done
+
+TOOL USAGE TIPS:
+- browse_stockanalysis navigates and screenshots the page. It does NOT return table data.
+- After browse_stockanalysis, ALWAYS call extract_page_with_vision to actually read the financial data from the screenshot.
+- Use note_finding liberally to track your progress, data gathered, and decisions made.
+- Your notes persist across iterations so you can refer back to them.
+
+URL MAPPING (handled automatically by browse_stockanalysis):
+- statement_type "income" + period "quarterly" + data_type "as-reported" => /financials/?p=quarterly&type=as-reported
+- statement_type "balance" + period "annual" + data_type "standardized" => /financials/balance-sheet/
+- etc.
 
 DUAL-SOURCE VALIDATION:
-- You have two equal data sources: browse_stockanalysis and web_search
-- For every data point you intend to insert, gather it from BOTH sources
-- If both sources agree on a value, use it
-- If the sources disagree, investigate further with additional web_search queries
-- If you still cannot confirm a value with confidence, leave the cell empty
-- This cross-referencing is mandatory — do NOT rely on a single source alone
+- For every data point, gather it from BOTH StockAnalysis (via vision) AND Perplexity web_search
+- If both sources agree, use the value
+- If they disagree, investigate further or leave the cell empty
+- Record your validation reasoning with note_finding
 
-CRITICAL RULES — READ CAREFULLY:
-
-DO NOT EDIT EXISTING DATA:
-- You must NEVER modify, overwrite, or change any cell that already contains a value
-- ONLY populate cells that are currently empty/blank
-- If a cell already has data — even if you believe it is incorrect or outdated — leave it untouched
-- This is the single most important rule. Violating it will corrupt the files.
-
-NUMBER FORMAT — FULLY WRITTEN OUT VALUES:
-- All values in these Excel files are fully written out in absolute terms
-- For example: revenue of 394.33 billion is stored as 394328000000, NOT as 394.33 or 394328
-- When you insert a value, write the complete number with no abbreviation
-- Do NOT use thousands, millions, or billions shorthand
-- Match this format exactly when inserting new data
-
-DATA ACCURACY:
-- Match row labels carefully (Revenue, Net Income, Total Assets, etc.)
-- Match column headers to the correct fiscal periods
-- If you cannot find accurate data for a cell, leave it empty rather than guessing
-- Be careful to distinguish between annual and quarterly data
-- Always verify the data you're inserting matches the expected format and period
+CRITICAL RULES:
+- NEVER modify cells that already contain values — ONLY fill empty cells
+- All numeric values must be fully written out (e.g., 394328000000 not 394.33B)
+- If you cannot confirm a value, leave the cell empty
+- Match row labels and column headers carefully to the correct fiscal periods
 
 FILES AVAILABLE:
-- financials-annual-income: Annual income statement data
-- financials-annual-balance: Annual balance sheet data
-- financials-annual-cashflow: Annual cash flow statement data
-- financials-quarterly-income: Quarterly income statement data
-- financials-quarterly-balance: Quarterly balance sheet data
-- financials-quarterly-cashflow: Quarterly cash flow statement data
-- standardized-annual-*: Standardized versions of the above
-- standardized-quarterly-*: Standardized versions of the above
+- financials-annual-income, financials-annual-balance, financials-annual-cashflow
+- financials-quarterly-income, financials-quarterly-balance, financials-quarterly-cashflow
+- standardized-annual-income, standardized-annual-balance, standardized-annual-cashflow
+- standardized-quarterly-income, standardized-quarterly-balance, standardized-quarterly-cashflow
 """
 
 
 class AgentContext:
-    """Context for the running agent."""
+    """Context for the running agent, including persistent browser and scratchpad."""
 
     def __init__(self, ticker: str, work_dir: Path, files: dict[str, Path]):
         self.ticker = ticker
@@ -174,6 +206,24 @@ class AgentContext:
         self.data_sources: list[str] = []
         self.files_modified: set[str] = set()
 
+        # Scratchpad for agent notes
+        self.notes: list[dict] = []
+
+        # Persistent browser (initialized lazily on first browse call)
+        self.browser: StockAnalysisBrowser | None = None
+
+        # Latest screenshot bytes from browser
+        self.latest_screenshot: bytes | None = None
+
+    def get_browser(self) -> StockAnalysisBrowser:
+        """Get or create the persistent browser instance."""
+        if self.browser is None:
+            print("Initializing persistent browser session...")
+            self.browser = StockAnalysisBrowser()
+            self.browser.__enter__()
+            print("Browser session started")
+        return self.browser
+
     def get_updater(self, bucket_name: str) -> ExcelUpdater | None:
         """Get or create an updater for a file."""
         if bucket_name not in self.updaters:
@@ -182,9 +232,16 @@ class AgentContext:
         return self.updaters.get(bucket_name)
 
     def close_all(self):
-        """Close all open workbooks."""
+        """Close all open workbooks and browser."""
         for updater in self.updaters.values():
             updater.close()
+        if self.browser:
+            try:
+                self.browser.__exit__(None, None, None)
+                print("Browser session closed")
+            except Exception as e:
+                print(f"Error closing browser: {e}")
+            self.browser = None
 
 
 def handle_tool_call(context: AgentContext, tool_name: str, tool_input: dict) -> str:
@@ -204,21 +261,80 @@ def handle_tool_call(context: AgentContext, tool_name: str, tool_input: dict) ->
     elif tool_name == "browse_stockanalysis":
         statement_type = tool_input["statement_type"]
         period = tool_input["period"]
-        key = f"{statement_type}_{period}"
+        data_type = tool_input["data_type"]
 
-        # Check if we already have this data
-        if key not in context.financial_data:
-            from .browser import StockAnalysisBrowser
-            with StockAnalysisBrowser() as browser:
-                if browser.login():
-                    context.financial_data[key] = browser.extract_financial_table(
-                        context.ticker, statement_type, period
-                    )
-                    context.data_sources.append(f"stockanalysis.com/{statement_type}/{period}")
-                else:
-                    context.financial_data[key] = {"error": "Failed to login"}
+        browser = context.get_browser()
+        result = browser.navigate_to_financials(
+            context.ticker, statement_type, period, data_type
+        )
 
-        return json.dumps(context.financial_data[key], indent=2)
+        # Store screenshot for vision extraction
+        if result.get("success") and result.get("screenshot_bytes"):
+            context.latest_screenshot = result.pop("screenshot_bytes")
+            context.data_sources.append(f"stockanalysis.com/{statement_type}/{period}/{data_type}")
+            result["screenshot_available"] = True
+            result["message"] = "Screenshot captured. Use extract_page_with_vision to read the financial data."
+        else:
+            context.latest_screenshot = None
+
+        return json.dumps(result, indent=2)
+
+    elif tool_name == "extract_page_with_vision":
+        instruction = tool_input["instruction"]
+
+        if not context.latest_screenshot:
+            return json.dumps({"error": "No screenshot available. Call browse_stockanalysis first."})
+
+        # Call Gemini API directly with the screenshot
+        gemini_key = os.environ.get("GEMINI_API_KEY", "")
+        if not gemini_key:
+            return json.dumps({"error": "GEMINI_API_KEY not configured"})
+
+        try:
+            img_b64 = base64.b64encode(context.latest_screenshot).decode("utf-8")
+
+            response = httpx.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}",
+                headers={"Content-Type": "application/json"},
+                json={
+                    "contents": [
+                        {
+                            "parts": [
+                                {"text": instruction},
+                                {
+                                    "inline_data": {
+                                        "mime_type": "image/png",
+                                        "data": img_b64,
+                                    }
+                                },
+                            ]
+                        }
+                    ],
+                    "generationConfig": {
+                        "maxOutputTokens": 8192,
+                        "temperature": 0.1,
+                    },
+                },
+                timeout=60,
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                text = data["candidates"][0]["content"]["parts"][0]["text"]
+                return json.dumps({"success": True, "extracted_data": text})
+            else:
+                return json.dumps({"error": f"Gemini API error {response.status_code}: {response.text[:500]}"})
+
+        except Exception as e:
+            return json.dumps({"error": f"Vision extraction failed: {str(e)}"})
+
+    elif tool_name == "note_finding":
+        category = tool_input["category"]
+        content = tool_input["content"]
+        note = {"category": category, "content": content, "timestamp": time.time()}
+        context.notes.append(note)
+        print(f"  📝 [{category}] {content[:200]}")
+        return json.dumps({"recorded": True, "total_notes": len(context.notes)})
 
     elif tool_name == "update_excel_cell":
         bucket_name = tool_input["bucket_name"]
@@ -256,7 +372,6 @@ def handle_tool_call(context: AgentContext, tool_name: str, tool_input: dict) ->
         if not api_key:
             return json.dumps({"error": "PERPLEXITY_API_KEY not configured"})
 
-        import httpx
         response = httpx.post(
             "https://api.perplexity.ai/chat/completions",
             headers={
@@ -336,36 +451,49 @@ Here is an overview of the file schemas:
 
 Please:
 1. Review the file structures above
-2. Identify ONLY cells that are currently EMPTY and need financial data
-3. Use BOTH StockAnalysis.com AND web search to get and cross-reference the data
-4. Only insert values that are corroborated by both sources
-5. Fill in ONLY empty cells — do NOT modify any cell that already has a value
-6. Save all files when done
+2. Use note_finding to record which cells are empty and need data
+3. Use browse_stockanalysis + extract_page_with_vision to get financial data from StockAnalysis.com
+4. Use web_search to cross-reference values
+5. Use note_finding to track your validation results
+6. Fill in ONLY empty cells with dual-source verified values
+7. Save all files when done
 
 IMPORTANT: Only fill empty cells. Do NOT edit, overwrite, or modify any pre-existing data. All numeric values must be fully written out (e.g., 394328000000 not 394.33B)."""
 
         messages = [{"role": "user", "content": user_message}]
 
         # Run the agent loop
-        max_iterations = 20
+        max_iterations = 30
         iteration = 0
+        start_time = time.time()
 
         try:
             while iteration < max_iterations:
                 iteration += 1
-                print(f"\n--- Agent iteration {iteration} ---")
+                iter_start = time.time()
+                print(f"\n{'='*60}")
+                print(f"--- Agent iteration {iteration}/{max_iterations} ---")
+                print(f"{'='*60}")
 
                 response = client.messages.create(
                     model="claude-opus-4-6",
-                    max_tokens=4096,
+                    max_tokens=8192,
                     system=SYSTEM_PROMPT,
                     tools=TOOLS,
                     messages=messages,
                 )
 
+                # Print agent reasoning (text blocks)
+                for block in response.content:
+                    if hasattr(block, "text"):
+                        print(f"\n💭 Agent reasoning:\n{block.text[:500]}")
+                        if len(block.text) > 500:
+                            print(f"  ... ({len(block.text)} chars total)")
+
                 # Process response
                 if response.stop_reason == "end_turn":
-                    print("Agent finished")
+                    elapsed = time.time() - iter_start
+                    print(f"\n✅ Agent finished (iteration took {elapsed:.1f}s)")
                     break
 
                 if response.stop_reason == "tool_use":
@@ -375,8 +503,15 @@ IMPORTANT: Only fill empty cells. Do NOT edit, overwrite, or modify any pre-exis
 
                     for block in assistant_content:
                         if block.type == "tool_use":
-                            print(f"Tool call: {block.name}")
+                            print(f"\n🔧 Tool: {block.name}")
+                            print(f"   Input: {json.dumps(block.input)[:200]}")
+
                             result = handle_tool_call(context, block.name, block.input)
+
+                            # Print result summary
+                            result_preview = result[:300] if len(result) <= 300 else result[:300] + "..."
+                            print(f"   Result: {result_preview}")
+
                             tool_results.append({
                                 "type": "tool_result",
                                 "tool_use_id": block.id,
@@ -387,9 +522,24 @@ IMPORTANT: Only fill empty cells. Do NOT edit, overwrite, or modify any pre-exis
                     messages.append({"role": "assistant", "content": assistant_content})
                     messages.append({"role": "user", "content": tool_results})
 
+                    elapsed = time.time() - iter_start
+                    print(f"\n⏱️  Iteration {iteration} took {elapsed:.1f}s")
+
                 else:
                     print(f"Unexpected stop reason: {response.stop_reason}")
                     break
+
+            # Print final summary
+            total_time = time.time() - start_time
+            print(f"\n{'='*60}")
+            print(f"AGENT COMPLETE — {iteration} iterations in {total_time:.1f}s")
+            print(f"{'='*60}")
+
+            # Print all scratchpad notes
+            if context.notes:
+                print(f"\n📋 Scratchpad ({len(context.notes)} notes):")
+                for i, note in enumerate(context.notes, 1):
+                    print(f"  {i}. [{note['category']}] {note['content'][:200]}")
 
             # Upload modified files back to storage
             files_updated = 0
@@ -406,12 +556,15 @@ IMPORTANT: Only fill empty cells. Do NOT edit, overwrite, or modify any pre-exis
                             context.files[bucket_name]
                         ):
                             files_updated += 1
+            else:
+                context.close_all()
 
             return {
                 "success": True,
                 "files_updated": files_updated,
                 "data_sources": list(set(context.data_sources)),
                 "iterations": iteration,
+                "notes_count": len(context.notes),
             }
 
         except Exception as e:
