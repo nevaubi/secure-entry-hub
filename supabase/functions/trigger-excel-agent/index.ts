@@ -44,21 +44,26 @@
      // Get today's date in YYYY-MM-DD format
      const today = new Date().toISOString().split('T')[0];
  
-     // Map timing to before_after_market values
-     const marketTiming = timing === 'premarket' ? 'Before Market' : 'After Market';
- 
-     console.log(`Querying earnings for ${today} with timing: ${marketTiming}`);
- 
-     // Query earnings_calendar for today's tickers
-     const earningsResponse = await fetch(
-       `${supabaseUrl}/rest/v1/earnings_calendar?report_date=eq.${today}&before_after_market=eq.${encodeURIComponent(marketTiming)}&select=ticker,report_date,before_after_market`,
-       {
-         headers: {
-           'apikey': supabaseKey,
-           'Authorization': `Bearer ${supabaseKey}`,
-         },
-       }
-     );
+      // Map timing to before_after_market values (EODHD uses no spaces)
+      const marketTiming = timing === 'premarket' ? 'BeforeMarket' : 'AfterMarket';
+
+      console.log(`Querying earnings for ${today} with timing: ${marketTiming}`);
+
+      // Query earnings_calendar for today's tickers
+      // For afterhours, also include records with null timing (treat as after-hours by default)
+      const queryFilter = timing === 'afterhours'
+        ? `report_date=eq.${today}&or=(before_after_market.eq.${marketTiming},before_after_market.is.null)`
+        : `report_date=eq.${today}&before_after_market=eq.${marketTiming}`;
+
+      const earningsResponse = await fetch(
+        `${supabaseUrl}/rest/v1/earnings_calendar?${queryFilter}&select=ticker,report_date,before_after_market`,
+        {
+          headers: {
+            'apikey': supabaseKey,
+            'Authorization': `Bearer ${supabaseKey}`,
+          },
+        }
+      );
  
      if (!earningsResponse.ok) {
        throw new Error(`Failed to query earnings_calendar: ${earningsResponse.statusText}`);
