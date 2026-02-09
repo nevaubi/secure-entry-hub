@@ -30,6 +30,7 @@ image = (
         "fastapi[standard]>=0.115.0",
     )
     .run_commands("playwright install chromium", "playwright install-deps chromium")
+    .add_local_dir("agent", remote_path="/root/agent")
 )
 
 # Secrets for API access
@@ -41,11 +42,8 @@ secrets = [
     modal.Secret.from_name("perplexity-secret"),  # PERPLEXITY_API_KEY
 ]
 
-# Mount the agent package so it's available in the container
-agent_mount = modal.Mount.from_local_dir("agent", remote_path="/root/agent")
 
-
-@app.function(image=image, secrets=secrets, timeout=600, mounts=[agent_mount])
+@app.function(image=image, secrets=secrets, timeout=600)
 def process_ticker(
     ticker: str,
     report_date: str,
@@ -118,7 +116,7 @@ def process_ticker(
         return {"success": False, "error": error_msg}
 
 
-@app.function(image=image, secrets=secrets, timeout=60, mounts=[agent_mount])
+@app.function(image=image, secrets=secrets, timeout=60)
 @modal.fastapi_endpoint(method="POST")
 def webhook(data: dict) -> dict:
     """
