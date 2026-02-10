@@ -75,20 +75,30 @@ def process_ticker(
         # Report back to Lovable if callback URL provided
         if callback_url:
             webhook_secret = os.environ.get("MODAL_WEBHOOK_SECRET", "")
-            httpx.post(
-                callback_url,
-                json={
-                    "ticker": ticker,
-                    "report_date": report_date,
-                    "timing": timing,
-                    "status": "completed" if result["success"] else "failed",
-                    "files_updated": result.get("files_updated", 0),
-                    "data_sources_used": result.get("data_sources", []),
-                    "error_message": result.get("error"),
-                },
-                headers={"Authorization": f"Bearer {webhook_secret}"},
-                timeout=30,
-            )
+            callback_payload = {
+                "ticker": ticker,
+                "report_date": report_date,
+                "timing": timing,
+                "status": "completed" if result["success"] else "failed",
+                "files_updated": result.get("files_updated", 0),
+                "data_sources_used": result.get("data_sources", []),
+                "error_message": result.get("error"),
+            }
+            for attempt in range(2):
+                try:
+                    resp = httpx.post(
+                        callback_url,
+                        json=callback_payload,
+                        headers={"Authorization": f"Bearer {webhook_secret}"},
+                        timeout=30,
+                    )
+                    print(f"Callback sent for {ticker}: {resp.status_code}")
+                    break
+                except Exception as cb_err:
+                    print(f"Callback attempt {attempt + 1} failed for {ticker}: {cb_err}")
+                    if attempt == 0:
+                        import time as _time
+                        _time.sleep(5)
 
         return result
 
@@ -99,21 +109,28 @@ def process_ticker(
         # Report failure back to Lovable
         if callback_url:
             webhook_secret = os.environ.get("MODAL_WEBHOOK_SECRET", "")
-            try:
-                httpx.post(
-                    callback_url,
-                    json={
-                        "ticker": ticker,
-                        "report_date": report_date,
-                        "timing": timing,
-                        "status": "failed",
-                        "error_message": error_msg,
-                    },
-                    headers={"Authorization": f"Bearer {webhook_secret}"},
-                    timeout=30,
-                )
-            except Exception:
-                pass  # Don't fail on callback error
+            fail_payload = {
+                "ticker": ticker,
+                "report_date": report_date,
+                "timing": timing,
+                "status": "failed",
+                "error_message": error_msg,
+            }
+            for attempt in range(2):
+                try:
+                    resp = httpx.post(
+                        callback_url,
+                        json=fail_payload,
+                        headers={"Authorization": f"Bearer {webhook_secret}"},
+                        timeout=30,
+                    )
+                    print(f"Failure callback sent for {ticker}: {resp.status_code}")
+                    break
+                except Exception as cb_err:
+                    print(f"Failure callback attempt {attempt + 1} failed for {ticker}: {cb_err}")
+                    if attempt == 0:
+                        import time as _time
+                        _time.sleep(5)
 
         return {"success": False, "error": error_msg}
 
