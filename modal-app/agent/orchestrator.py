@@ -75,16 +75,11 @@ TOOLS = [
     },
     {
         "name": "extract_page_with_vision",
-        "description": "Send the latest page screenshot to Gemini Flash to extract financial data as structured markdown. Call this after browse_stockanalysis to read the table data from the screenshot.",
+        "description": "Extract financial data from the latest screenshot using a fixed structured prompt. Returns a markdown table of the first 4 columns. No parameters needed -- just call it after browse_stockanalysis.",
         "input_schema": {
             "type": "object",
-            "properties": {
-                "instruction": {
-                    "type": "string",
-                    "description": "What to extract from the page, e.g. 'Extract the full financial table with all rows and columns as a markdown table. Include all numeric values exactly as shown.'"
-                }
-            },
-            "required": ["instruction"]
+            "properties": {},
+            "required": []
         }
     },
     {
@@ -241,17 +236,17 @@ WORKFLOW:
    - After insertion, the tool returns a row_map telling you exactly which cells to fill (e.g. B3=Total Assets, B4=Current Assets...)
 2. If no new column is needed and there are no empty cells, respond with "FILE COMPLETE"
 3. Call browse_stockanalysis with the parameters above to navigate to the matching page
-4. Call extract_page_with_vision to read the financial data from the screenshot
-5. Match the extracted data to the row labels from the file/row_map
+4. Call extract_page_with_vision (no parameters needed) -- it uses a fixed internal prompt to extract a structured markdown table
+5. The Gemini markdown table almost always provides ALL the data you need. Match the extracted data to the row labels from the file/row_map
 6. Use update_excel_cell to fill ALL cells in one go — batch as many calls as possible per iteration
 7. When done, respond with "FILE COMPLETE"
 
 IMPORTANT — FOR NEW COLUMN INSERTION:
 - After inserting the column, you get a row_map with exact cell references and labels
-- Browse StockAnalysis FIRST, extract data, then batch-fill all cells that correctly match the corresponding row label via the StockAnalysis data, use your professional judgement
-- Utilize the web_search for only any potential remaining required row labels, sometimes row labels will not match perfectly, use your best accurate judgement.
-- You can optionally use web_search for a quick sanity check for validation if required, but do not call it excessively, if you have the required correct data values to fill the column B for the current respective file, then utilize update_excel_cell to insert the values and complete, do not alter any other column data ONLY the new Column B
-- Accuracy is critical: you have up to 15 iterations max, but most workflows shouldn't take more than a few iterations considering the StockAnalysis data should usually cover all required values, however the 15 max iterations are there for rare cases so be thorough — browse, extract, and batch-write all cells carefully
+- Browse StockAnalysis FIRST, extract data, then batch-fill all cells that correctly match the corresponding row label via the StockAnalysis data
+- The StockAnalysis markdown table is almost always sufficient for ALL required values. Only use web_search if specific critical values are clearly missing after extraction.
+- Do NOT call web_search by default for validation -- the Gemini-extracted StockAnalysis data is your primary and usually complete source
+- Accuracy is critical: you have up to 15 iterations max, but aim to finish in fewer by trusting the StockAnalysis extraction
 - ALWAYS REMEMBER to use update_excel_cell when finished gathering the required data to ensure you actually fill in the respective column B cells before finishing
 
 FOR FILLING EXISTING EMPTY CELLS (no insertion):
@@ -360,8 +355,6 @@ def handle_tool_call(context: AgentContext, tool_name: str, tool_input: dict) ->
         return json.dumps(result, indent=2)
 
     elif tool_name == "extract_page_with_vision":
-        instruction = tool_input["instruction"]
-
         if not context.latest_screenshot:
             return json.dumps({"error": "No screenshot available. Call browse_stockanalysis first."})
 
@@ -374,7 +367,7 @@ def handle_tool_call(context: AgentContext, tool_name: str, tool_input: dict) ->
             img_b64 = base64.b64encode(context.latest_screenshot).decode("utf-8")
 
             response = httpx.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key={gemini_key}",
+                f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:generateContent?key={gemini_key}",
                 headers={"Content-Type": "application/json"},
                 json={
                     "contents": [
@@ -410,7 +403,7 @@ Return ONLY the markdown table, nothing else."""},
                         }
                     ],
                     "generationConfig": {
-                        "maxOutputTokens": 8192,
+                        "maxOutputTokens": 12000,
                         "temperature": 1,
                     },
                 },
@@ -666,7 +659,7 @@ def run_agent(ticker: str, report_date: str, timing: str, fiscal_period_end: str
 
                 # Fresh message history for each file
                 if needs_new_column:
-                    messages = [{"role": "user", "content": f"Begin processing {file_name} for {ticker}. Report date: {report_date}, fiscal_period_end: {target_date}, timing: {timing}.\n\nCOMPLETE FILE DATA:\n{full_schema}\n\nA NEW COLUMN INSERTION IS REQUIRED.\n\nIMPORTANT — DATE AND PERIOD HEADERS:\n- Do NOT use fiscal_period_end or report_date for the column header.\n- Instead, FIRST call browse_stockanalysis, THEN call extract_page_with_vision.\n- The Gemini vision result will return a markdown table. Use the DATE from the FIRST data column (leftmost after row labels) of that markdown table as your date_header.\n- For annual files, ALWAYS use 'Q4 YYYY' as the period_header. For quarterly files, use the specific quarter (e.g. 'Q1 2026').\n- The Gemini markdown table is your PRIMARY data source. Use web_search only for validation or missing values.\n\nYou have up to 15 iterations. Be thorough:\n1. Browse + extract in iteration 1\n2. Insert column with correct date/period from the markdown table\n3. Batch-write ALL cells using data from the markdown table\n4. Use web_search for validation or gaps as needed\n5. Finish when all cells are written\n\nFocus ONLY on the newest period column B after insertion.\nDo NOT fill old/historical empty cells. Ignore columns C, D, E, etc.\nUse FULL absolute numbers (e.g., 394328000000 not 394.3B or 394,328).\nMatch each value to the correct row label carefully before inserting.\nDo NOT stop after extracting data — the job is not done until every cell is written."}]
+                    messages = [{"role": "user", "content": f"Begin processing {file_name} for {ticker}. Report date: {report_date}, fiscal_period_end: {target_date}, timing: {timing}.\n\nCOMPLETE FILE DATA:\n{full_schema}\n\nA NEW COLUMN INSERTION IS REQUIRED.\n\nIMPORTANT — DATE AND PERIOD HEADERS:\n- Do NOT use fiscal_period_end or report_date for the column header.\n- Instead, FIRST call browse_stockanalysis, THEN call extract_page_with_vision.\n- The Gemini vision result will return a markdown table. Use the DATE from the FIRST data column (leftmost after row labels) of that markdown table as your date_header.\n- For annual files, ALWAYS use 'Q4 YYYY' as the period_header. For quarterly files, use the specific quarter (e.g. 'Q1 2026').\n- The Gemini markdown table is your PRIMARY and almost always COMPLETE data source. It will typically contain ALL the values you need. Use web_search ONLY if specific critical values are clearly missing -- do not use it for routine validation.\n\nYou have up to 15 iterations. Be thorough:\n1. Browse + extract in iteration 1\n2. Insert column with correct date/period from the markdown table\n3. Batch-write ALL cells using data from the markdown table\n4. Use web_search ONLY if critical values are clearly missing after extraction\n5. Finish when all cells are written\n\nFocus ONLY on the newest period column B after insertion.\nDo NOT fill old/historical empty cells. Ignore columns C, D, E, etc.\nUse FULL absolute numbers (e.g., 394328000000 not 394.3B or 394,328).\nMatch each value to the correct row label carefully before inserting.\nDo NOT stop after extracting data — the job is not done until every cell is written."}]
                 else:
                     messages = [{"role": "user", "content": f"Begin processing {file_name} for {ticker}. Report date: {report_date}, timing: {timing}.\n\nCOMPLETE FILE DATA:\n{full_schema}\n\nEMPTY CELLS NEEDING DATA ({len(empty_cells)} total):\n{', '.join(empty_cells) if empty_cells else 'None'}"}]
 
