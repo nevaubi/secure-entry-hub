@@ -8,7 +8,8 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
- import ImportCompanies from "./pages/ImportCompanies";
+import ImportCompanies from "./pages/ImportCompanies";
+import Backfill from "./pages/Backfill";
 
 const queryClient = new QueryClient();
 
@@ -28,6 +29,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <Dashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/backfill"
+              element={
+                <ProtectedRoute>
+                  <Backfill />
                 </ProtectedRoute>
               }
             />

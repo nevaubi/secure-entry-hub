@@ -9,5 +9,11 @@ project_id = "wbwyumlaiwnqetqavnph"
  [functions.trigger-excel-agent]
  verify_jwt = false
  
- [functions.excel-agent-callback]
- verify_jwt = false
+[functions.excel-agent-callback]
+verify_jwt = false
+
+[functions.backfill-earnings]
+verify_jwt = false
+
+[functions.backfill-trigger-single]
+verify_jwt = false

@@ -1,16 +1,35 @@
- import { useAuth } from '@/hooks/useAuth';
- import { Button } from '@/components/ui/button';
- import { LogOut } from 'lucide-react';
- 
- const TopNavbar = () => {
-   const { user, signOut } = useAuth();
- 
-   return (
-     <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-       <div className="flex h-14 items-center justify-between px-4 md:px-6">
-         <div className="flex items-center gap-2">
-           <span className="text-lg font-semibold text-foreground">Dashboard</span>
-         </div>
+import { useAuth } from '@/hooks/useAuth';
+import { Button } from '@/components/ui/button';
+import { LogOut } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
+import { cn } from '@/lib/utils';
+
+const TopNavbar = () => {
+  const { user, signOut } = useAuth();
+  const location = useLocation();
+
+  const navItems = [
+    { label: 'Dashboard', to: '/dashboard' },
+    { label: 'Backfill', to: '/backfill' },
+  ];
+
+  return (
+    <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div className="flex h-14 items-center justify-between px-4 md:px-6">
+        <div className="flex items-center gap-4">
+          {navItems.map(item => (
+            <Link
+              key={item.to}
+              to={item.to}
+              className={cn(
+                'text-sm font-medium transition-colors hover:text-foreground',
+                location.pathname === item.to ? 'text-foreground' : 'text-muted-foreground'
+              )}
+            >
+              {item.label}
+            </Link>
+          ))}
+        </div>
          
          <div className="flex items-center gap-4">
            <span className="hidden text-sm text-muted-foreground sm:inline-block">
