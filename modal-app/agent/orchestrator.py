@@ -404,7 +404,7 @@ Return ONLY the markdown table, nothing else."""},
                         }
                     ],
                     "generationConfig": {
-                        "maxOutputTokens": 15000,
+                        "maxOutputTokens": 18000,
                         "temperature": 1,
                     },
                 },
@@ -661,12 +661,12 @@ def run_agent(ticker: str, report_date: str, timing: str, fiscal_period_end: str
 
                 # Fresh message history for each file
                 if needs_new_column:
-                    messages = [{"role": "user", "content": f"Begin processing {file_name} for {ticker}. Report date: {report_date}, fiscal_period_end: {target_date}, timing: {timing}.\n\nCOMPLETE FILE DATA:\n{full_schema}\n\nA NEW COLUMN INSERTION IS REQUIRED.\n\nIMPORTANT — DATE AND PERIOD HEADERS:\n- Do NOT use fiscal_period_end or report_date for the column header.\n- Instead, FIRST call browse_stockanalysis, THEN call extract_page_with_vision.\n- The Gemini vision result will return a markdown table. Use the DATE from the FIRST data column (leftmost after row labels) of that markdown table as your date_header.\n- For annual files, ALWAYS use 'Q4 YYYY' as the period_header. For quarterly files, use the specific quarter (e.g. 'Q1 2026').\n- The Gemini markdown table is your PRIMARY and almost always COMPLETE data source. It will typically contain ALL the values you need. Use web_search ONLY if specific critical values are clearly missing -- do not use it for routine validation.\n\nYou have up to 15 iterations. Be thorough:\n1. Browse + extract in iteration 1\n2. Insert column with correct date/period from the markdown table\n3. Batch-write ALL cells using data from the markdown table\n4. Use web_search ONLY if critical values are clearly missing after extraction\n5. Finish when all cells are written\n\nFocus ONLY on the newest period column B after insertion.\nDo NOT fill old/historical empty cells. Ignore columns C, D, E, etc.\nUse FULL absolute numbers (e.g., 394328000000 not 394.3B or 394,328).\nMatch each value to the correct row label carefully before inserting.\nDo NOT stop after extracting data — the job is not done until every cell is written."}]
+                    messages = [{"role": "user", "content": f"Begin processing {file_name} for {ticker}. Report date: {report_date}, fiscal_period_end: {target_date}, timing: {timing}.\n\nCOMPLETE FILE DATA:\n{full_schema}\n\nA NEW COLUMN INSERTION IS REQUIRED.\n\nIMPORTANT — DATE AND PERIOD HEADERS:\n- Do NOT use fiscal_period_end or report_date for the column header.\n- Instead, FIRST call browse_stockanalysis, THEN call extract_page_with_vision.\n- The Gemini vision result will return a markdown table. Use the DATE from the FIRST data column (leftmost after row labels) of that markdown table as your date_header.\n- For annual files, ALWAYS use 'Q4 YYYY' as the period_header. For quarterly files, use the specific quarter (e.g. 'Q1 2026').\n- The Gemini markdown table is your PRIMARY and almost always COMPLETE data source. It will typically contain ALL the values you need. Use web_search ONLY if specific critical values are clearly missing -- do not use it for routine validation.\n\nYou have up to 18 iterations. Be thorough:\n1. Browse + extract in iteration 1\n2. Insert column with correct date/period from the markdown table\n3. Batch-write ALL cells using data from the markdown table\n4. Use web_search ONLY if critical values are clearly missing after extraction\n5. Finish when all cells are written\n\nFocus ONLY on the newest period column B after insertion.\nDo NOT fill old/historical empty cells. Ignore columns C, D, E, etc.\nUse FULL absolute numbers (e.g., 394328000000 not 394.3B or 394,328).\nMatch each value to the correct row label carefully before inserting.\nDo NOT stop after extracting data — the job is not done until every cell is written."}]
                 else:
                     messages = [{"role": "user", "content": f"Begin processing {file_name} for {ticker}. Report date: {report_date}, timing: {timing}.\n\nCOMPLETE FILE DATA:\n{full_schema}\n\nEMPTY CELLS NEEDING DATA ({len(empty_cells)} total):\n{', '.join(empty_cells) if empty_cells else 'None'}"}]
 
                 # Sub-loop: 15 iterations max per file
-                max_file_iterations = 15
+                max_file_iterations = 18
                 for iteration in range(1, max_file_iterations + 1):
                     total_iterations += 1
                     iter_start = time.time()
