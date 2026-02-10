@@ -1,56 +1,50 @@
 
 
-## Fix: Callback Not Reaching Dashboard + Extend Iteration/Token Limits
+## Add Manual Status Controls to Backfill Dashboard
 
-### Root Cause of Stuck Status
+### Problem
+You cannot manually mark tickers as completed, failed, or reset them for reprocessing. Additionally, the existing "Mark Stale as Failed" button is silently failing because the `excel_processing_runs` table has no UPDATE RLS policy.
 
-The callback URL constructed in `backfill-trigger-single` (line 97) uses `SUPABASE_URL`, which inside Lovable Cloud resolves to an **internal** address (e.g., `http://supabase-kong:8000`). Modal, running externally, cannot reach this URL. The `httpx.post` call silently fails, so the `excel_processing_runs` record is never updated.
-
-**Fix**: Use `EXTERNAL_SUPABASE_URL` (which is already configured as `https://auth.deltasage.ai`) for the callback URL, since Modal needs to reach the publicly-accessible endpoint.
+### Solution
+1. Add an RLS policy allowing authenticated users to update `excel_processing_runs`
+2. Add a dropdown menu per row with three manual actions: **Mark Completed**, **Mark Failed**, and **Reset** (deletes the run so it shows "not started" and can be reprocessed)
 
 ### Changes
 
-#### 1. Fix callback URL in `backfill-trigger-single` (line 97)
+#### 1. Database Migration
+Add UPDATE and DELETE policies for authenticated users on `excel_processing_runs`:
 
-**File**: `supabase/functions/backfill-trigger-single/index.ts`
+```sql
+CREATE POLICY "Authenticated users can update processing runs"
+  ON public.excel_processing_runs FOR UPDATE
+  TO authenticated USING (true) WITH CHECK (true);
 
-Change the callback URL from:
+CREATE POLICY "Authenticated users can delete processing runs"
+  ON public.excel_processing_runs FOR DELETE
+  TO authenticated USING (true);
 ```
-callback_url: `${supabaseUrl}/functions/v1/excel-agent-callback`
-```
-To:
-```
-callback_url: `${Deno.env.get('EXTERNAL_SUPABASE_URL')}/functions/v1/excel-agent-callback`
-```
 
-This ensures Modal can actually reach the callback endpoint.
+The DELETE policy is needed for the "Reset" action, which removes the run record entirely so the ticker reverts to "not started" and the Process button becomes available again.
 
-#### 2. Extend max iterations from 15 to 18
+#### 2. UI Changes in `src/pages/Backfill.tsx`
 
-**File**: `modal-app/agent/orchestrator.py` (line 669)
+Replace the single "Process" button in each row with a row that includes:
+- The existing **Process** button (for not started / failed rows)
+- A **dropdown menu** (three-dot icon) with:
+  - **Mark Completed** -- updates status to `completed`
+  - **Mark Failed** -- updates status to `failed`
+  - **Reset** -- deletes the `excel_processing_runs` record so the row goes back to "not started"
 
-Change `max_file_iterations = 15` to `max_file_iterations = 18`.
+The dropdown only appears for rows that have a processing run record (i.e., not "not started").
 
-Also update the user prompt on line 664 that references "15 iterations" to say "18 iterations".
+Add two new mutations:
+- `updateStatusMutation`: patches `status` and `completed_at` on the run
+- `resetRunMutation`: deletes the run record for that ticker/report_date
 
-This is safe -- the Modal timeout is 1800s (30 min), and each iteration takes roughly 10-30 seconds. With 6 files at 18 iterations max, worst case is ~108 iterations, well within the timeout.
-
-#### 3. Increase Gemini Vision max output tokens from 15k to 18k
-
-**File**: `modal-app/agent/orchestrator.py` (line 407)
-
-Change `"maxOutputTokens": 15000` to `"maxOutputTokens": 18000`.
-
-Gemini 2.5 Flash supports up to 65,536 output tokens, so 18k is well within limits. This gives more room for large financial tables with many rows.
-
-#### 4. Fix NFLX and UAL stuck records
-
-After deploying the callback fix, manually mark the two stuck records as completed (or use the "Mark Stale as Failed" button since they are older than 45 minutes, then retry if needed).
-
-### File Summary
+### Technical Details
 
 | File | Change |
 |---|---|
-| `supabase/functions/backfill-trigger-single/index.ts` | Use `EXTERNAL_SUPABASE_URL` for the callback URL so Modal can reach it |
-| `modal-app/agent/orchestrator.py` | Increase `max_file_iterations` from 15 to 18; increase Gemini `maxOutputTokens` from 15000 to 18000; update prompt text |
+| Database migration | Add UPDATE and DELETE RLS policies on `excel_processing_runs` |
+| `src/pages/Backfill.tsx` | Add dropdown menu with Mark Completed, Mark Failed, Reset actions; add corresponding mutations |
 
