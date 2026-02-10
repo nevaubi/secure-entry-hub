@@ -1,110 +1,54 @@
 
 
-## Backfill Dashboard: Fetch Missing Earnings and Trigger Processing
+## Deduplicate Tickers in Backfill Dashboard
 
-### Overview
+### Problem
+The EODHD API returns multiple earnings entries per ticker across the date range (different report dates). The `earnings_calendar` table correctly stores all of them, but for backfill processing, each ticker only needs to be triggered once — using its **latest** report date in the range.
 
-Build a protected dashboard page where you can:
-1. Fetch historical earnings from EODHD for **Jan 11 - Feb 9, 2026** (the gap period)
-2. See all backfill tickers in a table with their processing status
-3. Click a button to trigger each ticker one at a time via the existing Modal pipeline
+### Solution
+Deduplicate in the frontend (`Backfill.tsx`) so the ticker table shows one row per ticker, using the most recent `report_date` for that ticker. The database data stays untouched.
 
-### Step 1: Create a Backfill Edge Function
-
-**File**: `supabase/functions/backfill-earnings/index.ts`
-
-A one-time-use edge function that:
-- Accepts `from_date` and `to_date` parameters (defaulting to `2026-01-11` and `2026-02-09`)
-- Calls the EODHD API with that date range
-- Filters to US tickers, matches against the `companies` table
-- Upserts results into `earnings_calendar` (same logic as the daily cron)
-- Returns a summary of how many records were inserted
-
-Also add to `supabase/config.toml`:
-```toml
-[functions.backfill-earnings]
-verify_jwt = false
-```
-
-### Step 2: Create a Backfill Trigger Edge Function
-
-**File**: `supabase/functions/backfill-trigger-single/index.ts`
-
-A simple edge function that:
-- Accepts a single `{ ticker, report_date, fiscal_period_end, timing }` payload
-- Creates an `excel_processing_runs` record (if not already exists)
-- Calls the Modal webhook with just that one ticker
-- Returns success/failure
-
-Also add to `supabase/config.toml`:
-```toml
-[functions.backfill-trigger-single]
-verify_jwt = false
-```
-
-### Step 3: Create the Backfill Dashboard Page
+### Changes
 
 **File**: `src/pages/Backfill.tsx`
 
-A protected page with:
+Add a deduplication step in the `tableRows` memo that:
+1. Groups all earnings rows by `ticker`
+2. Picks the row with the **latest** `report_date` for each ticker
+3. Joins with the processing runs as before
 
-**Section 1 -- Fetch Earnings**
-- Date range inputs (pre-filled with **Jan 11** and **Feb 9, 2026**)
-- "Fetch Earnings" button that calls the `backfill-earnings` edge function
-- Shows result count after fetching
+This reduces the 1000 rows to ~unique tickers only.
 
-**Section 2 -- Ticker Table**
-- Queries `earnings_calendar` joined with `excel_processing_runs` for the date range
-- Displays a table with columns: Ticker, Report Date, Fiscal Period End, Status (pending/completed/failed/not started)
-- Each row has a "Process" button (disabled if already completed)
-- Clicking "Process" calls `backfill-trigger-single` for that ticker
-- Status updates via polling or manual refresh button
+```
+// Inside the tableRows useMemo:
+// 1. Deduplicate earnings by ticker, keeping the latest report_date
+const dedupedEarnings = new Map<string, EarningsRow>();
+for (const e of earnings) {
+  const existing = dedupedEarnings.get(e.ticker);
+  if (!existing || e.report_date > existing.report_date) {
+    dedupedEarnings.set(e.ticker, e);
+  }
+}
 
-**Section 3 -- Progress Summary**
-- Shows counts: Total tickers, Completed, Failed, Remaining
+// 2. Map over deduped entries, joining with runs
+return Array.from(dedupedEarnings.values()).map(e => {
+  const run = runsMap.get(`${e.ticker}_${e.report_date}`);
+  return {
+    ...e,
+    status: run?.status || 'not started',
+    error_message: run?.error_message || null,
+    timing: e.before_after_market === 'BeforeMarket' ? 'premarket' : 'afterhours',
+  };
+});
+```
 
-### Step 4: Add Route
-
-**File**: `src/App.tsx` -- Add a protected route `/backfill` pointing to the new Backfill page.
-
-### Step 5: Add Navigation Link
-
-**File**: `src/components/TopNavbar.tsx` -- Add a "Backfill" nav link.
-
----
+The summary counts and table will then reflect unique tickers only.
 
 ### Technical Details
 
-**Database**: No schema changes needed. Uses existing `earnings_calendar` and `excel_processing_runs` tables.
-
-**Edge Functions**:
-- `backfill-earnings`: Uses `EODHD_API_TOKEN` and `SUPABASE_SERVICE_ROLE_KEY` (already configured)
-- `backfill-trigger-single`: Uses `MODAL_WEBHOOK_SECRET`, `MODAL_WEBHOOK_URL`, and `EXTERNAL_SUPABASE_URL` (already configured)
-
-**Frontend**:
-- Uses `@tanstack/react-query` for data fetching
-- Uses existing shadcn/ui table, button, input, and badge components
-- Polling interval of 10 seconds for status refresh while processing
-
-**Flow**:
-```text
-[Fetch Earnings Button] --> backfill-earnings edge fn --> EODHD API --> earnings_calendar table
-                                                                              |
-[Ticker Table loads from DB] <------------------------------------------------+
-
-[Process Button per ticker] --> backfill-trigger-single edge fn --> Modal webhook --> process_ticker
-                                                                              |
-[Status column updates via polling] <--- excel_processing_runs table <--------+
-```
-
-### File Summary
-
-| File | Action |
+| File | Change |
 |---|---|
-| `supabase/functions/backfill-earnings/index.ts` | Create -- fetch historical EODHD data for Jan 11 - Feb 9 |
-| `supabase/functions/backfill-trigger-single/index.ts` | Create -- trigger one ticker via Modal |
-| `supabase/config.toml` | Update -- add both new functions |
-| `src/pages/Backfill.tsx` | Create -- dashboard UI with pre-filled dates Jan 11 - Feb 9 |
-| `src/App.tsx` | Update -- add /backfill route |
-| `src/components/TopNavbar.tsx` | Update -- add nav link |
+| `src/pages/Backfill.tsx` | Update `tableRows` useMemo to deduplicate by ticker, keeping latest report_date |
+
+No edge function or database changes needed. The deduplication happens purely in the UI layer before display and before triggering processing.
 
