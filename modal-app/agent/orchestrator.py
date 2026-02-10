@@ -404,7 +404,7 @@ Return ONLY the markdown table, nothing else."""},
                         }
                     ],
                     "generationConfig": {
-                        "maxOutputTokens": 12000,
+                        "maxOutputTokens": 15000,
                         "temperature": 1,
                     },
                 },
@@ -673,8 +673,8 @@ def run_agent(ticker: str, report_date: str, timing: str, fiscal_period_end: str
                     print(f"\n  --- {file_name} iteration {iteration}/{max_file_iterations} ---")
 
                     response = client.messages.create(
-                        model="claude-sonnet-4-5-20250514",,
-                        max_tokens=8192 if iteration == 1 else 4096,
+                        model="claude-sonnet-4-5",
+                        max_tokens=8192 if iteration == 1 else 6096,
                         system=system_prompt,
                         tools=TOOLS,
                         messages=messages,
