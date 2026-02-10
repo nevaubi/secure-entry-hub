@@ -367,7 +367,7 @@ def handle_tool_call(context: AgentContext, tool_name: str, tool_input: dict) ->
             img_b64 = base64.b64encode(context.latest_screenshot).decode("utf-8")
 
             response = httpx.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:generateContent?key={gemini_key}",
+                f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key={gemini_key}",
                 headers={"Content-Type": "application/json"},
                 json={
                     "contents": [
