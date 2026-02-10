@@ -25,6 +25,7 @@ interface ProcessingRun {
   timing: string;
   status: string;
   error_message: string | null;
+  started_at: string | null;
 }
 
 const statusColors: Record<string, string> = {
@@ -63,7 +64,7 @@ const Backfill = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('excel_processing_runs')
-        .select('ticker, report_date, timing, status, error_message')
+        .select('ticker, report_date, timing, status, error_message, started_at')
         .gte('report_date', fromDate)
         .lte('report_date', toDate);
       if (error) throw error;
@@ -149,6 +150,37 @@ const Backfill = () => {
     },
   });
 
+  // Mark stale pending runs as failed
+  const markStaleMutation = useMutation({
+    mutationFn: async () => {
+      const staleThreshold = new Date(Date.now() - 45 * 60 * 1000).toISOString();
+      const { data, error } = await supabase
+        .from('excel_processing_runs')
+        .update({
+          status: 'failed',
+          error_message: 'Timed out — no callback received',
+          completed_at: new Date().toISOString(),
+        })
+        .eq('status', 'pending')
+        .lt('started_at', staleThreshold)
+        .select();
+      if (error) throw error;
+      return data?.length || 0;
+    },
+    onSuccess: (count) => {
+      toast({ title: 'Stale runs cleaned up', description: `${count} run(s) marked as failed` });
+      refetchRuns();
+    },
+    onError: (error) => {
+      toast({ title: 'Error marking stale runs', description: String(error), variant: 'destructive' });
+    },
+  });
+
+  const staleCount = useMemo(() => {
+    const threshold = Date.now() - 45 * 60 * 1000;
+    return runs.filter(r => r.status === 'pending' && r.started_at && new Date(r.started_at).getTime() < threshold).length;
+  }, [runs]);
+
   const handleRefresh = () => {
     refetchEarnings();
     refetchRuns();
@@ -213,10 +245,23 @@ const Backfill = () => {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>Tickers ({tableRows.length})</CardTitle>
-              <Button variant="ghost" size="sm" onClick={handleRefresh}>
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Refresh
-              </Button>
+              <div className="flex items-center gap-2">
+                {staleCount > 0 && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => markStaleMutation.mutate()}
+                    disabled={markStaleMutation.isPending}
+                  >
+                    {markStaleMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Mark {staleCount} Stale as Failed
+                  </Button>
+                )}
+                <Button variant="ghost" size="sm" onClick={handleRefresh}>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Refresh
+                </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent>

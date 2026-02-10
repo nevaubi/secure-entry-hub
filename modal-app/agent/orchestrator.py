@@ -282,6 +282,7 @@ class AgentContext:
         self.updaters: dict[str, ExcelUpdater] = {}
         self.data_sources: list[str] = []
         self.files_modified: set[str] = set()
+        self.cells_written: dict[str, int] = {}
 
         # Scratchpad for agent notes — persists across ALL files
         self.notes: list[dict] = []
@@ -451,6 +452,7 @@ Return ONLY the markdown table, nothing else."""},
 
         if success:
             context.files_modified.add(bucket_name)
+            context.cells_written[bucket_name] = context.cells_written.get(bucket_name, 0) + 1
 
         return json.dumps({"success": success})
 
@@ -723,11 +725,15 @@ def run_agent(ticker: str, report_date: str, timing: str, fiscal_period_end: str
                 # Save this file immediately after processing
                 context.completed_files.append(file_name)
                 if file_name in context.files_modified:
-                    if save_single_file(context, storage, file_name):
-                        files_updated += 1
-                        print(f"  📤 Uploaded {file_name}")
+                    cells = context.cells_written.get(file_name, 0)
+                    if cells > 0:
+                        if save_single_file(context, storage, file_name):
+                            files_updated += 1
+                            print(f"  📤 Uploaded {file_name} ({cells} cells written)")
+                        else:
+                            print(f"  ⚠️  Failed to upload {file_name}")
                     else:
-                        print(f"  ⚠️  Failed to upload {file_name}")
+                        print(f"  ⚠️  Skipping upload of {file_name} — column inserted but no data cells written")
 
                 print(f"\n  Progress: {len(context.completed_files)}/{len(FILE_ORDER)} files processed")
 
