@@ -10,7 +10,10 @@ import {
 } from '@/components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, RefreshCw, Play, Download } from 'lucide-react';
+import { Loader2, RefreshCw, Play, Download, MoreVertical, CheckCircle, XCircle, RotateCcw } from 'lucide-react';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface EarningsRow {
   ticker: string;
@@ -176,6 +179,48 @@ const Backfill = () => {
     },
   });
 
+  // Manual status update mutation
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ ticker, report_date, status }: { ticker: string; report_date: string; status: string }) => {
+      const { error } = await supabase
+        .from('excel_processing_runs')
+        .update({
+          status,
+          completed_at: new Date().toISOString(),
+          error_message: status === 'failed' ? 'Manually marked as failed' : null,
+        })
+        .eq('ticker', ticker)
+        .eq('report_date', report_date);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: 'Status updated' });
+      refetchRuns();
+    },
+    onError: (error) => {
+      toast({ title: 'Update failed', description: String(error), variant: 'destructive' });
+    },
+  });
+
+  // Reset (delete) run mutation
+  const resetRunMutation = useMutation({
+    mutationFn: async ({ ticker, report_date }: { ticker: string; report_date: string }) => {
+      const { error } = await supabase
+        .from('excel_processing_runs')
+        .delete()
+        .eq('ticker', ticker)
+        .eq('report_date', report_date);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: 'Run reset', description: 'Ticker can now be reprocessed' });
+      refetchRuns();
+    },
+    onError: (error) => {
+      toast({ title: 'Reset failed', description: String(error), variant: 'destructive' });
+    },
+  });
+
   const staleCount = useMemo(() => {
     const threshold = Date.now() - 45 * 60 * 1000;
     return runs.filter(r => r.status === 'pending' && r.started_at && new Date(r.started_at).getTime() < threshold).length;
@@ -311,20 +356,51 @@ const Backfill = () => {
                           )}
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={row.status === 'completed' || row.status === 'pending' || row.status === 'processing' || triggerMutation.isPending}
-                            onClick={() => triggerMutation.mutate({
-                              ticker: row.ticker,
-                              report_date: row.report_date,
-                              fiscal_period_end: row.fiscal_period_end,
-                              timing: row.timing,
-                            })}
-                          >
-                            <Play className="mr-1 h-3 w-3" />
-                            Process
-                          </Button>
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={row.status === 'completed' || row.status === 'pending' || row.status === 'processing' || triggerMutation.isPending}
+                              onClick={() => triggerMutation.mutate({
+                                ticker: row.ticker,
+                                report_date: row.report_date,
+                                fiscal_period_end: row.fiscal_period_end,
+                                timing: row.timing,
+                              })}
+                            >
+                              <Play className="mr-1 h-3 w-3" />
+                              Process
+                            </Button>
+                            {row.status !== 'not started' && (
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                    <MoreVertical className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="bg-popover">
+                                  <DropdownMenuItem
+                                    onClick={() => updateStatusMutation.mutate({ ticker: row.ticker, report_date: row.report_date, status: 'completed' })}
+                                  >
+                                    <CheckCircle className="mr-2 h-4 w-4 text-green-500" />
+                                    Mark Completed
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() => updateStatusMutation.mutate({ ticker: row.ticker, report_date: row.report_date, status: 'failed' })}
+                                  >
+                                    <XCircle className="mr-2 h-4 w-4 text-red-500" />
+                                    Mark Failed
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() => resetRunMutation.mutate({ ticker: row.ticker, report_date: row.report_date })}
+                                  >
+                                    <RotateCcw className="mr-2 h-4 w-4" />
+                                    Reset
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
