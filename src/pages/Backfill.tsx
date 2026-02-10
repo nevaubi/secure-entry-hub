@@ -81,7 +81,16 @@ const Backfill = () => {
 
   // Merged view
   const tableRows = useMemo(() => {
-    return earnings.map(e => {
+    // Deduplicate earnings by ticker, keeping the latest report_date
+    const dedupedEarnings = new Map<string, EarningsRow>();
+    for (const e of earnings) {
+      const existing = dedupedEarnings.get(e.ticker);
+      if (!existing || e.report_date > existing.report_date) {
+        dedupedEarnings.set(e.ticker, e);
+      }
+    }
+
+    return Array.from(dedupedEarnings.values()).map(e => {
       const run = runsMap.get(`${e.ticker}_${e.report_date}`);
       return {
         ...e,
