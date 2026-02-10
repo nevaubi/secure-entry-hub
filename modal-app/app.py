@@ -44,7 +44,7 @@ secrets = [
 ]
 
 
-@app.function(image=image, secrets=secrets, timeout=600)
+@app.function(image=image, secrets=secrets, timeout=1800)
 def process_ticker(
     ticker: str,
     report_date: str,
