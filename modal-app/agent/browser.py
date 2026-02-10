@@ -92,6 +92,22 @@ class StockAnalysisBrowser:
         print("All login attempts failed")
         return False
 
+    def _select_raw_units(self):
+        """Click the number-units dropdown and select 'Raw' to show full values."""
+        try:
+            dropdown = self.page.locator('button[title="Change number units"]')
+            dropdown.wait_for(timeout=5000)
+            dropdown.click()
+            time.sleep(0.5)
+
+            raw_btn = self.page.locator('button.active:has-text("Raw"), button:has-text("Raw")')
+            raw_btn.first.click()
+            time.sleep(0.5)
+
+            print("Selected 'Raw' number units")
+        except Exception as e:
+            print(f"Warning: Could not select Raw units: {e}")
+
     def _build_url(self, ticker: str, statement_type: str, period: str, data_type: str) -> str:
         """
         Build the correct StockAnalysis.com URL for a financial statement.
@@ -157,6 +173,9 @@ class StockAnalysisBrowser:
                 print("Warning: table selector not found, proceeding with screenshot anyway")
 
             time.sleep(1)  # Let any lazy-loaded content settle
+
+            # Select "Raw" number format before taking screenshot
+            self._select_raw_units()
 
             # Take full-page screenshot
             screenshot_bytes = self.screenshot_full_page()
