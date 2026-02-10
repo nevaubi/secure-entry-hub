@@ -28,12 +28,12 @@ from .updater import ExcelUpdater
 
 # Ordered list of files to process sequentially
 FILE_ORDER = [
-    "financials-annual-income",
-    "financials-annual-balance",
-    "financials-annual-cashflow",
     "financials-quarterly-income",
     "financials-quarterly-balance",
     "financials-quarterly-cashflow",
+    "financials-annual-income",
+    "financials-annual-balance",
+    "financials-annual-cashflow",
 ]
 
 # Maps file names to browse_stockanalysis parameters
@@ -478,6 +478,9 @@ Return ONLY the markdown table, nothing else."""},
 
         if result.get("success"):
             context.files_modified.add(bucket_name)
+            # Track the period header for quarterly skip logic
+            if "quarterly" in bucket_name:
+                context.detected_quarter = tool_input["period_header"]
 
         return json.dumps(result)
 
@@ -577,8 +580,22 @@ def run_agent(ticker: str, report_date: str, timing: str, fiscal_period_end: str
         files_updated = 0
 
         try:
-            # Process files one at a time
+            # Process files one at a time (quarterly first, then annual)
+            detected_quarter = None  # Will be set after first quarterly file completes
             for file_idx, file_name in enumerate(FILE_ORDER, 1):
+                # Skip annual files if the quarterly report was not Q4
+                if "annual" in file_name and hasattr(context, 'detected_quarter') and context.detected_quarter:
+                    if "Q4" not in context.detected_quarter.upper():
+                        print(f"\n⏭️  Skipping {file_name} -- {context.detected_quarter} report, not Q4/annual")
+                        context.completed_files.append(file_name)
+                        context.notes.append({
+                            "category": "file_skipped",
+                            "content": f"{file_name}: Skipped -- {context.detected_quarter} report, annual files only updated for Q4.",
+                            "file": file_name,
+                            "timestamp": time.time(),
+                        })
+                        continue
+
                 if file_name not in files:
                     print(f"\n⏭️  Skipping {file_name} (not downloaded)")
                     continue
