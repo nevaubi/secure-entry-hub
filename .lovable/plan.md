@@ -1,94 +1,78 @@
 
 
-## Reorder Files: Quarterly First, Then Conditionally Process Annual
-
-### Concept
-
-Reorder `FILE_ORDER` so the 3 quarterly files are processed first. After all 3 quarterly files complete, check what period header the agent actually wrote (e.g., "Q4 2025" vs "Q1 2025"). If the quarter is Q4, continue processing the 3 annual files. Otherwise, skip them entirely.
+## Enforce Hardcoded Gemini Prompt, Update Model, and Emphasize StockAnalysis Data
 
 ### Changes
 
 **File**: `modal-app/agent/orchestrator.py`
 
-**1. Reorder FILE_ORDER** (lines 30-37)
+#### 1. Remove `instruction` parameter from `extract_page_with_vision` tool (lines 76-88)
+
+Replace the tool schema to have no parameters, making it clear the prompt is fixed:
 
 ```python
-FILE_ORDER = [
-    "financials-quarterly-income",
-    "financials-quarterly-balance",
-    "financials-quarterly-cashflow",
-    "financials-annual-income",
-    "financials-annual-balance",
-    "financials-annual-cashflow",
-]
+{
+    "name": "extract_page_with_vision",
+    "description": "Extract financial data from the latest screenshot using a fixed structured prompt. Returns a markdown table of the first 4 columns. No parameters needed -- just call it after browse_stockanalysis.",
+    "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+    }
+}
 ```
 
-**2. Track the period header used during quarterly processing**
+#### 2. Remove unused `instruction` variable (line 363)
 
-Add a variable before the file loop (around line 579) to track the quarter:
+Delete `instruction = tool_input["instruction"]` since the parameter no longer exists.
+
+#### 3. Update Gemini model and max tokens (line 377, line 412)
+
+- Change model from `gemini-3-flash-preview` to `gemini-3-flash`
+- Change `maxOutputTokens` from `8192` to `12000`
 
 ```python
-detected_quarter = None  # Will be set after first quarterly file completes
+# Line 377: URL change
+f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:generateContent?key={gemini_key}"
+
+# Line 412: Token limit
+"maxOutputTokens": 12000,
 ```
 
-Inside the `insert_new_period_column` tool handler (around line 473), capture the `period_header` the agent passes:
+#### 4. Update system prompt to emphasize StockAnalysis as primary source (lines 243-254)
 
-```python
-# After the insert call succeeds
-if result.get("success"):
-    context.files_modified.add(bucket_name)
-    # Track the period header for quarterly skip logic
-    if "quarterly" in bucket_name:
-        context.detected_quarter = tool_input["period_header"]
+Update the instructions around lines 243-254 to read:
+
+```
+3. Call browse_stockanalysis with the parameters above to navigate to the matching page
+4. Call extract_page_with_vision (no parameters needed) -- it uses a fixed internal prompt to extract a structured markdown table
+5. The Gemini markdown table almost always provides ALL the data you need. Match the extracted data to the row labels from the file/row_map
+6. Use update_excel_cell to fill ALL cells in one go -- batch as many calls as possible per iteration
+7. When done, respond with "FILE COMPLETE"
+
+IMPORTANT -- FOR NEW COLUMN INSERTION:
+- After inserting the column, you get a row_map with exact cell references and labels
+- Browse StockAnalysis FIRST, extract data, then batch-fill all cells that correctly match the corresponding row label via the StockAnalysis data
+- The StockAnalysis markdown table is almost always sufficient for ALL required values. Only use web_search if specific critical values are clearly missing after extraction.
+- Do NOT call web_search by default for validation -- the Gemini-extracted StockAnalysis data is your primary and usually complete source
+- Accuracy is critical: you have up to 15 iterations max, but aim to finish in fewer by trusting the StockAnalysis extraction
 ```
 
-**3. Skip annual files if quarter is not Q4**
+#### 5. Update initial user message to reinforce StockAnalysis primacy (line 668)
 
-Inside the file processing loop (line 581), before processing each file, add:
+Add emphasis in the user message:
 
-```python
-for file_idx, file_name in enumerate(FILE_ORDER, 1):
-    # Skip annual files if the quarterly report was not Q4
-    if "annual" in file_name and hasattr(context, 'detected_quarter') and context.detected_quarter:
-        if "Q4" not in context.detected_quarter.upper():
-            print(f"  Skipping {file_name} -- {context.detected_quarter} report, not Q4/annual")
-            context.completed_files.append(file_name)
-            context.notes.append({
-                "category": "file_skipped",
-                "content": f"{file_name}: Skipped -- {context.detected_quarter} report, annual files only updated for Q4.",
-                "file": file_name,
-                "timestamp": time.time(),
-            })
-            continue
-    # ... rest of existing loop
+```
+- The Gemini markdown table is your PRIMARY and almost always COMPLETE data source. It will typically contain ALL the values you need. Use web_search ONLY if specific critical values are clearly missing -- do not use it for routine validation.
 ```
 
-### How It Works
+### Summary
 
-```text
-1. Agent processes quarterly-income -> inserts column with e.g. "Q1 2025"
-2. detected_quarter = "Q1 2025"
-3. Agent processes quarterly-balance and quarterly-cashflow
-4. Loop reaches annual-income -> checks detected_quarter
-5. "Q4" not in "Q1 2025" -> skip all 3 annual files
-6. Done -- only quarterly files were updated
-
-If Q4:
-1. Agent processes all 3 quarterly files -> detected_quarter = "Q4 2025"  
-2. "Q4" IS in "Q4 2025" -> process all 3 annual files too
-3. All 6 files updated
-```
-
-### Why This Is Better Than Date-Based Detection
-
-- Uses the agent's actual output (the period header it wrote) rather than computing month differences
-- No date parsing or fiscal year assumptions needed
-- The agent already determines the correct quarter from the Gemini vision extraction
-- Simple string check: does it contain "Q4" or not
-
-### Files Modified
-
-| File | Changes |
-|---|---|
-| `modal-app/agent/orchestrator.py` | Reorder FILE_ORDER to quarterly-first; track `detected_quarter` from `insert_new_period_column`; skip annual files if quarter is not Q4 |
-
+| Change | Before | After |
+|---|---|---|
+| Tool `instruction` param | Required string | Removed entirely |
+| Gemini model | `gemini-3-flash-preview` | `gemini-3-flash` |
+| Gemini maxOutputTokens | 8192 | 12000 |
+| Max iterations | 15 (unchanged) | 15 (unchanged) |
+| StockAnalysis emphasis | "primary source" | "primary and almost always COMPLETE source" |
+| `instruction` variable (line 363) | Read from tool_input | Removed |
