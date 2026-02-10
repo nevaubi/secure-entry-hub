@@ -237,7 +237,7 @@ Call browse_stockanalysis with these exact parameters to get the data.
 WORKFLOW:
 1. Check if a new column needs to be inserted:
    - If the NEW COLUMN INSERTION REQUIRED section appears above, you MUST call insert_new_period_column FIRST
-   - Use the date from the FIRST data column (leftmost) of the Gemini-extracted markdown table as your date_header. For annual files, ALWAYS use "Q4 YYYY" as the period_header. For quarterly files, use the specific quarter (e.g. "Q1 2026", "Q2 2026").
+   - Use the date from the FIRST data column (leftmost) of the Gemini-extracted markdown table as your date_header. For annual files, ALWAYS use "Q4 YYYY" as the period_header. For quarterly files, use the specific quarter and YYYY shown (e.g. "Q1 2026", "Q2 2026").
    - After insertion, the tool returns a row_map telling you exactly which cells to fill (e.g. B3=Total Assets, B4=Current Assets...)
 2. If no new column is needed and there are no empty cells, respond with "FILE COMPLETE"
 3. Call browse_stockanalysis with the parameters above to navigate to the matching page
@@ -249,14 +249,14 @@ WORKFLOW:
 IMPORTANT — FOR NEW COLUMN INSERTION:
 - After inserting the column, you get a row_map with exact cell references and labels
 - Browse StockAnalysis FIRST, extract data, then batch-fill all cells that correctly match the corresponding row label via the StockAnalysis data, use your professional judgement
-- Utilize the web_search for the remaining required row labels, sometimes row labels will not match perfectly, use your best accurate judgement.
+- Utilize the web_search for only any potential remaining required row labels, sometimes row labels will not match perfectly, use your best accurate judgement.
 - You can optionally use web_search for a quick sanity check for validation if required, but do not call it excessively, if you have the required correct data values to fill the column B for the current respective file, then utilize update_excel_cell to insert the values and complete, do not alter any other column data ONLY the new Column B
-- Accuracy is critical: you have up to 15 iterations max, so be thorough — browse, extract, and batch-write all cells carefully
+- Accuracy is critical: you have up to 15 iterations max, but most workflows shouldn't take more than a few iterations considering the StockAnalysis data should usually cover all required values, however the 15 max iterations are there for rare cases so be thorough — browse, extract, and batch-write all cells carefully
 - ALWAYS REMEMBER to use update_excel_cell when finished gathering the required data to ensure you actually fill in the respective column B cells before finishing
 
 FOR FILLING EXISTING EMPTY CELLS (no insertion):
-- Use dual-source validation: gather from StockAnalysis AND Perplexity web_search as needed
-- If both sources agree, use the value; if they disagree, investigate or leave empty, use your best judgement
+- Use dual-source validation: gather from StockAnalysis AND Perplexity web_search as needed but do excessively call tools if you already have all the data required for the full newly created column
+- If both sources agree, use the value; if they disagree greatly, investigate or leave empty, use your best judgement
 
 CRITICAL RULES:
 - When inserting a new column, ONLY fill rows listed in the row_map
@@ -264,9 +264,9 @@ CRITICAL RULES:
   Your ONLY job is to fill the NEW column B with the latest period's data.
   Do NOT research or fill historical data from older periods.
 - After gathering financial data, you MUST call update_excel_cell for every target row.
-  Do NOT stop after browsing or extracting — the file is not complete until cells are written.
+  Do NOT simply stop after browsing or extracting — the file is not complete until cells are written.
   Always use fully written-out absolute numbers (e.g., 394328000000 not 394.3B).
-  Carefully match each value to its corresponding row label before writing, use your best judgement for potentially slightly .
+  Carefully match each value to its corresponding row label before writing, ensure accuracy
 - When filling empty cells (no insertion), NEVER modify cells that already contain values
 - All numeric values must be fully written out (e.g., 394328000000 not 394.33B)
 - Match row labels and column headers carefully to the correct fiscal periods
@@ -380,9 +380,9 @@ def handle_tool_call(context: AgentContext, tool_name: str, tool_input: dict) ->
                     "contents": [
                         {
                             "parts": [
-                                {"text": """You are a financial data extraction specialist. Analyze this screenshot of a financial statement table.
+                                {"text": """You are a financial data extraction specialist. Analyze this screenshot of a web page which also contains a financial statement table.
 
-TASK: Extract ONLY the first 4 columns from the LEFT side of the table. Start from the leftmost column (row labels) and include the next 3 data columns to the right.
+TASK: Focus on only the financial statement table. Extract ONLY the first 4 columns from the LEFT most side of the table. Start from the leftmost column (row labels) and include the next 3 data columns to the right.
 
 OUTPUT FORMAT: A markdown table with:
 - Row 1: Column headers exactly as shown (dates or period labels)
@@ -391,6 +391,7 @@ OUTPUT FORMAT: A markdown table with:
 - Reproduce ALL row labels EXACTLY as displayed
 - Reproduce ALL column headers/dates EXACTLY as displayed
 - If a cell is empty or shows a dash, use an empty cell in the markdown
+- Date accuracy is absolutely crucial, all values, labels, data in the generated markdown table should be 100% accurate based on the provided screenshot of the financial table
 
 CRITICAL ACCURACY RULES:
 - Do NOT guess or infer any values — only extract what is visually present
@@ -410,7 +411,7 @@ Return ONLY the markdown table, nothing else."""},
                     ],
                     "generationConfig": {
                         "maxOutputTokens": 8192,
-                        "temperature": 0.1,
+                        "temperature": 1,
                     },
                 },
                 timeout=60,
