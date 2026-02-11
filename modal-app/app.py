@@ -23,11 +23,11 @@ app = modal.App("excel-agent")
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install(
+        "anthropic>=0.40.0",
         "openpyxl>=3.1.2",
         "playwright>=1.40.0",
         "httpx>=0.27.0",
         "fastapi[standard]>=0.115.0",
-        "openai>=1.30.0",
     )
     .run_commands("playwright install chromium", "playwright install-deps chromium")
     .add_local_dir("agent", remote_path="/usr/local/lib/python3.11/site-packages/agent")
@@ -35,12 +35,12 @@ image = (
 
 # Secrets for API access
 secrets = [
+    modal.Secret.from_name("anthropic-secret"),  # ANTHROPIC_API_KEY
     modal.Secret.from_name("stockanalysis-secret"),  # STOCKANALYSIS_USERNAME, STOCKANALYSIS_PASSWORD
     modal.Secret.from_name("supabase-external-secret"),  # EXTERNAL_SUPABASE_URL, EXTERNAL_SUPABASE_SERVICE_KEY
     modal.Secret.from_name("modal-webhook-secret"),  # MODAL_WEBHOOK_SECRET
     modal.Secret.from_name("perplexity-secret"),  # PERPLEXITY_API_KEY
     modal.Secret.from_name("gemini-secret"),  # GEMINI_API_KEY
-    modal.Secret.from_name("moonshot-secret"),  # MOONSHOT_API_KEY
 ]
 
 

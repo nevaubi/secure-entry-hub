@@ -94,7 +94,7 @@ Deno.serve(async (req) => {
           timing,
         }],
         supabase_url: Deno.env.get('EXTERNAL_SUPABASE_URL'),
-        callback_url: `${Deno.env.get('SUPABASE_URL')}/functions/v1/excel-agent-callback`,
+        callback_url: `${Deno.env.get('EXTERNAL_SUPABASE_URL')}/functions/v1/excel-agent-callback`,
       }),
     });
 

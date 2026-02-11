@@ -1,5 +1,5 @@
 """
-Agent orchestrator using Moonshot Kimi K2.5.
+Agent orchestrator using Anthropic Claude.
 
 Coordinates the agentic workflow:
 1. Process Excel files one at a time (6 sequential sub-runs)
@@ -8,8 +8,6 @@ Coordinates the agentic workflow:
 4. Extract data via Gemini vision
 5. Track findings in scratchpad (re-injected each iteration)
 6. Update files with dual-source validated data
-
-Uses Moonshot Kimi K2.5 via OpenAI-compatible API with thinking mode.
 """
 
 import os
@@ -19,7 +17,7 @@ import base64
 import tempfile
 from pathlib import Path
 from typing import Any
-from openai import OpenAI
+import anthropic
 import httpx
 
 from .storage import StorageClient
@@ -162,21 +160,6 @@ TOOLS = [
         }
     }
 ]
-
-
-def convert_tools_to_openai_format(tools: list[dict]) -> list[dict]:
-    """Convert Anthropic-style tool definitions to OpenAI-compatible format for Kimi."""
-    openai_tools = []
-    for tool in tools:
-        openai_tools.append({
-            "type": "function",
-            "function": {
-                "name": tool["name"],
-                "description": tool["description"],
-                "parameters": tool["input_schema"],
-            }
-        })
-    return openai_tools
 
 
 def build_scratchpad_summary(notes: list[dict]) -> str:
@@ -565,14 +548,7 @@ def run_agent(ticker: str, report_date: str, timing: str, fiscal_period_end: str
     Returns:
         Dict with success status, files updated count, etc.
     """
-    # Initialize Kimi K2.5 client
-    llm_client = OpenAI(
-        api_key=os.environ["MOONSHOT_API_KEY"],
-        base_url="https://api.moonshot.ai/v1",
-    )
-    openai_tools = convert_tools_to_openai_format(TOOLS)
-    print(f"Using LLM: Kimi K2.5 (Moonshot)")
-
+    client = anthropic.Anthropic()
     storage = StorageClient()
 
     # Create working directory
@@ -689,89 +665,61 @@ def run_agent(ticker: str, report_date: str, timing: str, fiscal_period_end: str
                 else:
                     messages = [{"role": "user", "content": f"Begin processing {file_name} for {ticker}. Report date: {report_date}, timing: {timing}.\n\nCOMPLETE FILE DATA:\n{full_schema}\n\nEMPTY CELLS NEEDING DATA ({len(empty_cells)} total):\n{', '.join(empty_cells) if empty_cells else 'None'}"}]
 
-                # Sub-loop: 18 iterations max per file
+                # Sub-loop: 15 iterations max per file
                 max_file_iterations = 18
                 for iteration in range(1, max_file_iterations + 1):
                     total_iterations += 1
                     iter_start = time.time()
                     print(f"\n  --- {file_name} iteration {iteration}/{max_file_iterations} ---")
 
-                    # Kimi K2.5 via OpenAI-compatible API
-                    kimi_messages = [{"role": "system", "content": system_prompt}] + messages
-                    response = llm_client.chat.completions.create(
-                        model="kimi-k2.5",
-                        max_tokens=32768,
-                        temperature=1,
-                        messages=kimi_messages,
-                        tools=openai_tools,
-                        tool_choice="auto",
-                        thinking={"type": "enabled"},
+                    response = client.messages.create(
+                        model="claude-sonnet-4-5",
+                        max_tokens=8192 if iteration == 1 else 6096,
+                        system=system_prompt,
+                        tools=TOOLS,
+                        messages=messages,
                     )
 
-                    choice = response.choices[0]
-                    msg = choice.message
+                    # Print agent reasoning
+                    for block in response.content:
+                        if hasattr(block, "text"):
+                            print(f"\n  💭 Agent: {block.text[:500]}")
+                            if len(block.text) > 500:
+                                print(f"    ... ({len(block.text)} chars total)")
 
-                    # Print reasoning if available
-                    if hasattr(msg, "reasoning_content") and msg.reasoning_content:
-                        print(f"\n  🧠 Kimi reasoning: {msg.reasoning_content[:500]}")
-                        if len(msg.reasoning_content) > 500:
-                            print(f"    ... ({len(msg.reasoning_content)} chars total)")
-
-                    # Print text content
-                    if msg.content:
-                        print(f"\n  💭 Agent: {msg.content[:500]}")
-                        if len(msg.content) > 500:
-                            print(f"    ... ({len(msg.content)} chars total)")
-
-                    # Check if done
-                    if choice.finish_reason == "stop":
+                    # Check if agent is done with this file
+                    if response.stop_reason == "end_turn":
                         elapsed = time.time() - iter_start
                         print(f"  ✅ File complete ({elapsed:.1f}s)")
                         break
 
-                    if msg.tool_calls:
-                        # Build assistant message preserving reasoning_content
-                        assistant_msg = {
-                            "role": "assistant",
-                            "content": msg.content or "",
-                            "tool_calls": [
-                                {
-                                    "id": tc.id,
-                                    "type": "function",
-                                    "function": {
-                                        "name": tc.function.name,
-                                        "arguments": tc.function.arguments,
-                                    }
-                                }
-                                for tc in msg.tool_calls
-                            ],
-                        }
-                        
+                    if response.stop_reason == "tool_use":
+                        assistant_content = response.content
+                        tool_results = []
 
-                        messages.append(assistant_msg)
+                        for block in assistant_content:
+                            if block.type == "tool_use":
+                                print(f"  🔧 Tool: {block.name}")
+                                print(f"     Input: {json.dumps(block.input)[:200]}")
 
-                        # Process each tool call and append results
-                        for tc in msg.tool_calls:
-                            tool_name = tc.function.name
-                            tool_input = json.loads(tc.function.arguments)
-                            print(f"  🔧 Tool: {tool_name}")
-                            print(f"     Input: {json.dumps(tool_input)[:200]}")
+                                result = handle_tool_call(context, block.name, block.input)
 
-                            result = handle_tool_call(context, tool_name, tool_input)
+                                result_preview = result[:300] if len(result) <= 300 else result[:300] + "..."
+                                print(f"     Result: {result_preview}")
 
-                            result_preview = result[:300] if len(result) <= 300 else result[:300] + "..."
-                            print(f"     Result: {result_preview}")
+                                tool_results.append({
+                                    "type": "tool_result",
+                                    "tool_use_id": block.id,
+                                    "content": result,
+                                })
 
-                            messages.append({
-                                "role": "tool",
-                                "tool_call_id": tc.id,
-                                "content": result,
-                            })
+                        messages.append({"role": "assistant", "content": assistant_content})
+                        messages.append({"role": "user", "content": tool_results})
 
                         elapsed = time.time() - iter_start
                         print(f"  ⏱️  Iteration took {elapsed:.1f}s")
                     else:
-                        print(f"  Unexpected finish_reason: {choice.finish_reason}")
+                        print(f"  Unexpected stop reason: {response.stop_reason}")
                         break
 
                 # Save this file immediately after processing
