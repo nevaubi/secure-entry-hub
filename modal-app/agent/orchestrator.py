@@ -1,5 +1,5 @@
 """
-Agent orchestrator using Anthropic Claude.
+Agent orchestrator using Anthropic Claude or Moonshot Kimi K2.5.
 
 Coordinates the agentic workflow:
 1. Process Excel files one at a time (6 sequential sub-runs)
@@ -8,6 +8,10 @@ Coordinates the agentic workflow:
 4. Extract data via Gemini vision
 5. Track findings in scratchpad (re-injected each iteration)
 6. Update files with dual-source validated data
+
+LLM selection is controlled by the AGENT_LLM env var:
+- "claude" (default): Uses Anthropic Claude Sonnet 4.5
+- "kimi": Uses Moonshot Kimi K2.5 via OpenAI-compatible API
 """
 
 import os
@@ -160,6 +164,21 @@ TOOLS = [
         }
     }
 ]
+
+
+def convert_tools_to_openai_format(tools: list[dict]) -> list[dict]:
+    """Convert Anthropic-style tool definitions to OpenAI-compatible format for Kimi."""
+    openai_tools = []
+    for tool in tools:
+        openai_tools.append({
+            "type": "function",
+            "function": {
+                "name": tool["name"],
+                "description": tool["description"],
+                "parameters": tool["input_schema"],
+            }
+        })
+    return openai_tools
 
 
 def build_scratchpad_summary(notes: list[dict]) -> str:
@@ -548,7 +567,22 @@ def run_agent(ticker: str, report_date: str, timing: str, fiscal_period_end: str
     Returns:
         Dict with success status, files updated count, etc.
     """
-    client = anthropic.Anthropic()
+    # Determine LLM backend
+    agent_llm = os.environ.get("AGENT_LLM", "claude").lower()
+    use_kimi = agent_llm == "kimi"
+
+    if use_kimi:
+        from openai import OpenAI
+        llm_client = OpenAI(
+            api_key=os.environ["MOONSHOT_API_KEY"],
+            base_url="https://api.moonshot.ai/v1",
+        )
+        openai_tools = convert_tools_to_openai_format(TOOLS)
+        print(f"Using LLM: Kimi K2.5 (Moonshot)")
+    else:
+        llm_client = anthropic.Anthropic()
+        print(f"Using LLM: Claude Sonnet 4.5 (Anthropic)")
+
     storage = StorageClient()
 
     # Create working directory
@@ -672,55 +706,136 @@ def run_agent(ticker: str, report_date: str, timing: str, fiscal_period_end: str
                     iter_start = time.time()
                     print(f"\n  --- {file_name} iteration {iteration}/{max_file_iterations} ---")
 
-                    response = client.messages.create(
-                        model="claude-sonnet-4-5",
-                        max_tokens=8192 if iteration == 1 else 6096,
-                        system=system_prompt,
-                        tools=TOOLS,
-                        messages=messages,
-                    )
+                    if use_kimi:
+                        # --- Kimi K2.5 path (OpenAI-compatible) ---
+                        kimi_messages = [{"role": "system", "content": system_prompt}] + messages
+                        response = llm_client.chat.completions.create(
+                            model="kimi-k2.5",
+                            max_tokens=30000,
+                            messages=kimi_messages,
+                            tools=openai_tools,
+                            tool_choice="auto",
+                            thinking=True,
+                        )
 
-                    # Print agent reasoning
-                    for block in response.content:
-                        if hasattr(block, "text"):
-                            print(f"\n  💭 Agent: {block.text[:500]}")
-                            if len(block.text) > 500:
-                                print(f"    ... ({len(block.text)} chars total)")
+                        choice = response.choices[0]
+                        msg = choice.message
 
-                    # Check if agent is done with this file
-                    if response.stop_reason == "end_turn":
-                        elapsed = time.time() - iter_start
-                        print(f"  ✅ File complete ({elapsed:.1f}s)")
-                        break
+                        # Print reasoning if available
+                        if hasattr(msg, "reasoning_content") and msg.reasoning_content:
+                            print(f"\n  🧠 Kimi reasoning: {msg.reasoning_content[:500]}")
+                            if len(msg.reasoning_content) > 500:
+                                print(f"    ... ({len(msg.reasoning_content)} chars total)")
 
-                    if response.stop_reason == "tool_use":
-                        assistant_content = response.content
-                        tool_results = []
+                        # Print text content
+                        if msg.content:
+                            print(f"\n  💭 Agent: {msg.content[:500]}")
+                            if len(msg.content) > 500:
+                                print(f"    ... ({len(msg.content)} chars total)")
 
-                        for block in assistant_content:
-                            if block.type == "tool_use":
-                                print(f"  🔧 Tool: {block.name}")
-                                print(f"     Input: {json.dumps(block.input)[:200]}")
+                        # Check if done
+                        if choice.finish_reason == "stop":
+                            elapsed = time.time() - iter_start
+                            print(f"  ✅ File complete ({elapsed:.1f}s)")
+                            break
 
-                                result = handle_tool_call(context, block.name, block.input)
+                        if msg.tool_calls:
+                            # Build assistant message preserving reasoning_content
+                            assistant_msg = {
+                                "role": "assistant",
+                                "content": msg.content or "",
+                                "tool_calls": [
+                                    {
+                                        "id": tc.id,
+                                        "type": "function",
+                                        "function": {
+                                            "name": tc.function.name,
+                                            "arguments": tc.function.arguments,
+                                        }
+                                    }
+                                    for tc in msg.tool_calls
+                                ],
+                            }
+                            if hasattr(msg, "reasoning_content") and msg.reasoning_content:
+                                assistant_msg["reasoning_content"] = msg.reasoning_content
+
+                            messages.append(assistant_msg)
+
+                            # Process each tool call and append results
+                            for tc in msg.tool_calls:
+                                tool_name = tc.function.name
+                                tool_input = json.loads(tc.function.arguments)
+                                print(f"  🔧 Tool: {tool_name}")
+                                print(f"     Input: {json.dumps(tool_input)[:200]}")
+
+                                result = handle_tool_call(context, tool_name, tool_input)
 
                                 result_preview = result[:300] if len(result) <= 300 else result[:300] + "..."
                                 print(f"     Result: {result_preview}")
 
-                                tool_results.append({
-                                    "type": "tool_result",
-                                    "tool_use_id": block.id,
+                                messages.append({
+                                    "role": "tool",
+                                    "tool_call_id": tc.id,
                                     "content": result,
                                 })
 
-                        messages.append({"role": "assistant", "content": assistant_content})
-                        messages.append({"role": "user", "content": tool_results})
+                            elapsed = time.time() - iter_start
+                            print(f"  ⏱️  Iteration took {elapsed:.1f}s")
+                        else:
+                            print(f"  Unexpected finish_reason: {choice.finish_reason}")
+                            break
 
-                        elapsed = time.time() - iter_start
-                        print(f"  ⏱️  Iteration took {elapsed:.1f}s")
                     else:
-                        print(f"  Unexpected stop reason: {response.stop_reason}")
-                        break
+                        # --- Claude path (Anthropic) ---
+                        response = llm_client.messages.create(
+                            model="claude-sonnet-4-5",
+                            max_tokens=8192 if iteration == 1 else 6096,
+                            system=system_prompt,
+                            tools=TOOLS,
+                            messages=messages,
+                        )
+
+                        # Print agent reasoning
+                        for block in response.content:
+                            if hasattr(block, "text"):
+                                print(f"\n  💭 Agent: {block.text[:500]}")
+                                if len(block.text) > 500:
+                                    print(f"    ... ({len(block.text)} chars total)")
+
+                        # Check if agent is done with this file
+                        if response.stop_reason == "end_turn":
+                            elapsed = time.time() - iter_start
+                            print(f"  ✅ File complete ({elapsed:.1f}s)")
+                            break
+
+                        if response.stop_reason == "tool_use":
+                            assistant_content = response.content
+                            tool_results = []
+
+                            for block in assistant_content:
+                                if block.type == "tool_use":
+                                    print(f"  🔧 Tool: {block.name}")
+                                    print(f"     Input: {json.dumps(block.input)[:200]}")
+
+                                    result = handle_tool_call(context, block.name, block.input)
+
+                                    result_preview = result[:300] if len(result) <= 300 else result[:300] + "..."
+                                    print(f"     Result: {result_preview}")
+
+                                    tool_results.append({
+                                        "type": "tool_result",
+                                        "tool_use_id": block.id,
+                                        "content": result,
+                                    })
+
+                            messages.append({"role": "assistant", "content": assistant_content})
+                            messages.append({"role": "user", "content": tool_results})
+
+                            elapsed = time.time() - iter_start
+                            print(f"  ⏱️  Iteration took {elapsed:.1f}s")
+                        else:
+                            print(f"  Unexpected stop reason: {response.stop_reason}")
+                            break
 
                 # Save this file immediately after processing
                 context.completed_files.append(file_name)
