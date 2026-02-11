@@ -1,28 +1,57 @@
 
 
-## Hardcode Kimi K2.5 as the Agent LLM
+## Fix Kimi K2.5 API Formatting Errors
 
-### Overview
-Remove the `AGENT_LLM` environment variable toggle and hardcode the orchestrator to always use Moonshot Kimi K2.5. This simplifies the code by removing the dual-path logic.
+### Issues Found
+
+Two formatting errors in `modal-app/agent/orchestrator.py` that will cause API failures:
+
+---
+
+### 1. `thinking` parameter has wrong type (line 707)
+
+**Current (WRONG):**
+```python
+thinking=True,
+```
+
+**Correct:**
+```python
+thinking={"type": "enabled"},
+```
+
+The Kimi K2.5 API docs explicitly state this parameter is an **object**, not a boolean. Valid values are `{"type": "enabled"}` or `{"type": "disabled"}`. Passing `True` will likely cause a 400 error or be silently ignored.
+
+---
+
+### 2. `reasoning_content` must ALWAYS be present in assistant tool-call messages (lines 748-749)
+
+**Current (WRONG):** Only includes `reasoning_content` conditionally:
+```python
+if hasattr(msg, "reasoning_content") and msg.reasoning_content:
+    assistant_msg["reasoning_content"] = msg.reasoning_content
+```
+
+**Correct:** Always include it, even as empty string:
+```python
+assistant_msg["reasoning_content"] = getattr(msg, "reasoning_content", "") or ""
+```
+
+The Kimi API returns a 400 error (`"thinking is enabled but reasoning_content is missing in assistant tool call message"`) if any assistant message with tool_calls is missing the `reasoning_content` field during multi-step tool calling. This is a well-documented issue confirmed across multiple integration projects (Goose, OpenCode).
+
+---
 
 ### Changes
 
-**1. `modal-app/agent/orchestrator.py`**
-- Remove the `AGENT_LLM` env var check and all Claude/Anthropic SDK call paths
-- Always initialize the OpenAI client pointed at `https://api.moonshot.ai/v1`
-- Always use `model="kimi-k2.5"`, `thinking=True`, `max_tokens=30000`
-- Remove the Anthropic client import and initialization (keep only OpenAI)
-- Clean up any if/else branching between Claude and Kimi -- only the Kimi path remains
+**File: `modal-app/agent/orchestrator.py`**
 
-**2. `modal-app/app.py`**
-- Remove `AGENT_LLM` parameter passing
-- Keep `moonshot-secret` in the secrets list
-- Optionally remove `anthropic-secret` from secrets if no other code uses it (will verify during implementation)
+| Line | Change |
+|------|--------|
+| 707 | Change `thinking=True` to `thinking={"type": "enabled"}` |
+| 748-749 | Replace conditional reasoning_content with always-present: `assistant_msg["reasoning_content"] = getattr(msg, "reasoning_content", "") or ""` |
 
-**3. `modal-app/requirements.txt`**
-- Keep `openai>=1.30.0`
-- Optionally remove `anthropic` if nothing else imports it (will verify)
-
-### Result
-Cleaner, single-path orchestrator that always uses Kimi K2.5. No env vars to manage.
+### Impact
+- These are the only two changes needed
+- Both are single-line fixes
+- Without these fixes, multi-step tool calling will fail on the second iteration when the API validates the conversation history
 
