@@ -1,21 +1,27 @@
 
 
-## Change GOOGL to GOOG in Earnings Calendar
+## Include Feb 10, 2026 Earnings in Backfill Dashboard
 
-### What's happening
-- The `companies` table already has the ticker as **GOOG**
-- The `earnings_calendar` table has it as **GOOGL** (from the EODHD API data)
-- The dashboard displays `GOOGL` because it reads from `earnings_calendar`
+### Change
+Update the default `toDate` state in `src/pages/Backfill.tsx` from `'2026-02-09'` to `'2026-02-10'`.
 
-### Fix
-Update the `earnings_calendar` record to use `GOOG` instead of `GOOGL`:
+This is a one-line change on line 43:
 
-```sql
-UPDATE earnings_calendar SET ticker = 'GOOG' WHERE ticker = 'GOOGL';
+```
+// Before
+const [toDate, setToDate] = useState('2026-02-09');
+
+// After
+const [toDate, setToDate] = useState('2026-02-10');
 ```
 
-This is a simple data update -- no schema changes or code changes needed. The dashboard will immediately show `GOOG` after the update since it reads directly from this table.
+### Result
+74 new tickers from Feb 10 (e.g., CSCO, DDOG, GILD, NET, SPGI, CMG, ENPH, etc.) will appear in the backfill table alongside the existing entries.
 
-### Risk
-None -- there are no foreign key constraints between `earnings_calendar` and `companies`, and no `excel_processing_runs` records exist for either `GOOGL` or `GOOG`, so nothing else to update.
+### Technical Details
 
+| File | Change |
+|---|---|
+| `src/pages/Backfill.tsx` line 43 | Change default `toDate` from `'2026-02-09'` to `'2026-02-10'` |
+
+No database or schema changes needed -- the data is already in the `earnings_calendar` table.
