@@ -23,7 +23,6 @@ app = modal.App("excel-agent")
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install(
-        "anthropic>=0.40.0",
         "openpyxl>=3.1.2",
         "playwright>=1.40.0",
         "httpx>=0.27.0",
@@ -36,7 +35,6 @@ image = (
 
 # Secrets for API access
 secrets = [
-    modal.Secret.from_name("anthropic-secret"),  # ANTHROPIC_API_KEY
     modal.Secret.from_name("stockanalysis-secret"),  # STOCKANALYSIS_USERNAME, STOCKANALYSIS_PASSWORD
     modal.Secret.from_name("supabase-external-secret"),  # EXTERNAL_SUPABASE_URL, EXTERNAL_SUPABASE_SERVICE_KEY
     modal.Secret.from_name("modal-webhook-secret"),  # MODAL_WEBHOOK_SECRET
