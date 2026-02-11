@@ -701,6 +701,7 @@ def run_agent(ticker: str, report_date: str, timing: str, fiscal_period_end: str
                     response = llm_client.chat.completions.create(
                         model="kimi-k2.5",
                         max_tokens=30000,
+                        temperature=0.3,
                         messages=kimi_messages,
                         tools=openai_tools,
                         tool_choice="auto",
