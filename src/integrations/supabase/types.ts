@@ -183,6 +183,7 @@ export type Database = {
           id: string
           published_at: string
           source: string
+          summary: string | null
           ticker: string | null
           title: string
           url: string
@@ -193,6 +194,7 @@ export type Database = {
           id?: string
           published_at: string
           source: string
+          summary?: string | null
           ticker?: string | null
           title: string
           url: string
@@ -203,6 +205,7 @@ export type Database = {
           id?: string
           published_at?: string
           source?: string
+          summary?: string | null
           ticker?: string | null
           title?: string
           url?: string
@@ -216,6 +219,7 @@ export type Database = {
           id: string
           published_at: string
           source: string
+          summary: string | null
           ticker: string | null
           title: string
           url: string
@@ -226,6 +230,7 @@ export type Database = {
           id?: string
           published_at: string
           source: string
+          summary?: string | null
           ticker?: string | null
           title: string
           url: string
@@ -236,6 +241,7 @@ export type Database = {
           id?: string
           published_at?: string
           source?: string
+          summary?: string | null
           ticker?: string | null
           title?: string
           url?: string
@@ -249,6 +255,7 @@ export type Database = {
           id: string
           published_at: string
           source: string
+          summary: string | null
           title: string
           url: string
         }
@@ -258,6 +265,7 @@ export type Database = {
           id?: string
           published_at: string
           source: string
+          summary?: string | null
           title: string
           url: string
         }
@@ -267,6 +275,7 @@ export type Database = {
           id?: string
           published_at?: string
           source?: string
+          summary?: string | null
           title?: string
           url?: string
         }
@@ -279,6 +288,7 @@ export type Database = {
           id: string
           published_at: string
           source: string
+          summary: string | null
           ticker: string | null
           title: string
           url: string
@@ -289,6 +299,7 @@ export type Database = {
           id?: string
           published_at: string
           source: string
+          summary?: string | null
           ticker?: string | null
           title: string
           url: string
@@ -299,6 +310,7 @@ export type Database = {
           id?: string
           published_at?: string
           source?: string
+          summary?: string | null
           ticker?: string | null
           title?: string
           url?: string
