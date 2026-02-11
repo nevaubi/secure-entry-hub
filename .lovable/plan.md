@@ -1,27 +1,27 @@
 
 
-## Include Feb 10, 2026 Earnings in Backfill Dashboard
+## Fetch Feb 10 Earnings from EODHD API
 
 ### Change
-Update the default `toDate` state in `src/pages/Backfill.tsx` from `'2026-02-09'` to `'2026-02-10'`.
+Update the `fetch-earnings-calendar` edge function to accept an optional `date` query parameter. When provided, it fetches earnings for that specific date instead of today. Then call it with `date=2026-02-10` to backfill the missing tickers (including HOOD).
 
-This is a one-line change on line 43:
-
-```
-// Before
-const [toDate, setToDate] = useState('2026-02-09');
-
-// After
-const [toDate, setToDate] = useState('2026-02-10');
-```
-
-### Result
-74 new tickers from Feb 10 (e.g., CSCO, DDOG, GILD, NET, SPGI, CMG, ENPH, etc.) will appear in the backfill table alongside the existing entries.
+### What will happen
+1. The function calls the EODHD API for `2026-02-10`
+2. Filters to US tickers, matches against the `companies` table
+3. Upserts into `earnings_calendar` (existing records like CSCO won't be duplicated thanks to the unique constraint)
+4. Any missing tickers like HOOD will be added
 
 ### Technical Details
 
 | File | Change |
 |---|---|
-| `src/pages/Backfill.tsx` line 43 | Change default `toDate` from `'2026-02-09'` to `'2026-02-10'` |
+| `supabase/functions/fetch-earnings-calendar/index.ts` | Accept optional `date` query param; fall back to Central Time date if not provided |
 
-No database or schema changes needed -- the data is already in the `earnings_calendar` table.
+```typescript
+// Add after line 48, replace the currentDate logic:
+const url = new URL(req.url);
+const dateParam = url.searchParams.get('date');
+const currentDate = dateParam || getCentralTimeDate();
+```
+
+After deploying, the function will be called with `?date=2026-02-10` to fetch and insert the missing earnings data. The dashboard will then show all tickers that reported on Feb 10, including HOOD.
