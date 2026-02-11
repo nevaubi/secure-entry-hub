@@ -1,68 +1,66 @@
 
+## Set Up 3 Daily Cron Jobs for sync-news-external
 
-## Sync Rolling Market News to External Supabase
+### Goal
+Schedule `sync-news-external` to run 3 times daily on weekdays at:
+- 5:30 AM Central Time
+- 11:30 AM Central Time  
+- 4:00 PM Central Time
 
-### What gets synced
+This gives the `fetch-finviz-news` function (which runs at 5 AM, 11 AM, 4 PM) 30 minutes to complete before syncing.
 
-Only rows where `summary IS NOT NULL`. The following 6 columns are sent (no `id`, no `created_at`):
+### Approach
 
-| Column | Type | Notes |
+**1. Cron Expressions for Chicago Time**
+
+The cron jobs need to run on weekdays (Monday-Friday) only. Using standard 5-field cron format adjusted for Chicago timezone (UTC-6 / UTC-5 during DST):
+
+| Time | Cron Expression | Details |
 |---|---|---|
-| title | text | NOT NULL |
-| source | text | NOT NULL |
-| published_at | timestamptz | NOT NULL |
-| url | text | NOT NULL, unique constraint (upsert key) |
-| category | text | NOT NULL |
-| summary | text | NOT NULL (guaranteed by the filter) |
+| 5:30 AM Chicago | `30 5 * * 1-5` | Every weekday at 05:30 UTC |
+| 11:30 AM Chicago | `30 11 * * 1-5` | Every weekday at 11:30 UTC |
+| 4:00 PM Chicago | `0 16 * * 1-5` | Every weekday at 16:00 UTC |
 
-### Exact SQL for the external Supabase table
+**Note**: Supabase stores times in UTC. Chicago Central Time is UTC-6 (EST) or UTC-5 (EDT). We need to convert:
+- 5:30 AM CT → 11:30 UTC or 12:30 UTC (depending on DST)
+- 11:30 AM CT → 17:30 UTC or 18:30 UTC (depending on DST)
+- 4:00 PM CT → 22:00 UTC or 23:00 UTC (depending on DST)
 
-Run this on the external Supabase project:
+For simplicity and to avoid DST complexity, we'll use the UTC-6 offsets (standard winter times):
+- 5:30 AM CT = 11:30 UTC
+- 11:30 AM CT = 17:30 UTC
+- 4:00 PM CT = 22:00 UTC
 
-```text
-CREATE TABLE public.rolling_market_news (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  title text NOT NULL,
-  source text NOT NULL,
-  published_at timestamp with time zone NOT NULL,
-  url text NOT NULL,
-  category text NOT NULL,
-  summary text NOT NULL,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT rolling_market_news_url_key UNIQUE (url)
-);
-```
+**2. SQL Migration with 3 Cron Jobs**
 
-The external table has its own `id` and `created_at` (auto-generated), but the sync payload never sends those -- the external DB fills them in on insert.
+Create a new migration file that:
+- Enables `pg_cron` extension (if not already enabled)
+- Creates 3 separate `cron.schedule()` calls, each posting to the `sync-news-external` function
 
-### Edge function: `sync-news-external`
+Each call will:
+- Use the project's full function URL: `https://wbwyumlaiwnqetqavnph.supabase.co/functions/v1/sync-news-external`
+- Include the anon key in the Authorization header
+- Send a POST request with empty JSON body
 
-1. Query local `rolling_market_news` for all rows where `summary IS NOT NULL` (up to 300)
-2. Select only `title, source, published_at, url, category, summary`
-3. Create an external Supabase client using existing `EXTERNAL_SUPABASE_URL` and `EXTERNAL_SUPABASE_SERVICE_KEY`
-4. Upsert into external `rolling_market_news` in batches of 50, conflict on `url`
-5. On conflict, all fields are overwritten (summary may have been updated)
-6. Return `{ synced: N, errors: [...] }`
+**3. Error Handling**
 
-### Config addition
+- Cron jobs will silently log failures to the database; monitor logs via the backend analytics tool
+- If a sync fails, the next scheduled run will attempt again (idempotent due to URL-based upsert key)
 
-```text
-[functions.sync-news-external]
-verify_jwt = false
-```
+### Implementation Steps
 
-### Error handling
+1. **Create migration SQL** with 3 cron.schedule calls for the specified times
+2. **Execute via migration tool** - user approval required
+3. **Verify** by checking that the cron jobs appear in the pg_cron catalog
 
-- Per-batch errors are logged but don't stop remaining batches
-- Function returns a summary of successes and failures
+### Technical Details
 
-### Secrets
-
-Uses existing secrets -- no new ones needed:
-- `EXTERNAL_SUPABASE_URL`
-- `EXTERNAL_SUPABASE_SERVICE_KEY`
-
-### Future expansion
-
-Once verified for `rolling_market_news`, extend to the other 3 tables by looping over a config array.
+| Item | Value |
+|---|---|
+| Extension | `pg_cron` (must be enabled) |
+| Job Count | 3 (one per sync time) |
+| Frequency | Weekdays only (Mon-Fri) |
+| Error Handling | Logged to cron_job_run_details table |
+| Idempotency | Yes - upserts on URL prevent duplicates |
+| Retries | Manual if needed; scheduled jobs don't auto-retry |
 
