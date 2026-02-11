@@ -23,3 +23,6 @@ verify_jwt = false
 
 [functions.sync-news-external]
 verify_jwt = false
+
+[functions.summarize-news]
+verify_jwt = false
