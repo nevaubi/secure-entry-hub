@@ -44,8 +44,10 @@
      const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
      const supabase = createClient(supabaseUrl, supabaseServiceKey);
  
-     // Get current date in Central Time
-     const currentDate = getCentralTimeDate();
+      // Get date from query param or fall back to Central Time
+      const url = new URL(req.url);
+      const dateParam = url.searchParams.get('date');
+      const currentDate = dateParam || getCentralTimeDate();
      console.log(`Fetching earnings calendar for date: ${currentDate}`);
  
      // Call EODHD API
