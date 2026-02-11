@@ -1,60 +1,83 @@
 
 
-## Fix: Feb 10 Earnings Not Showing (Row Limit Hit)
+## Global Context: Automated Rolling News Pipeline
 
-### Problem
-The query fetching earnings from the database has a **default limit of 1,000 rows**, but there are **3,273 rows** in the Jan 11 - Feb 10 date range. Since results are sorted by date ascending, rows are cut off around Jan 29 and everything after (including all Feb 10 tickers) is silently dropped.
+### Overview
+Create an automated news ingestion system that fetches articles from 4 Finviz API endpoints, stores them in 4 separate database tables, and maintains a rolling window of ~200 articles per category. Runs 3 times per weekday.
 
-Additionally, there are **many duplicate rows** in the `earnings_calendar` table (e.g., 351 rows for Feb 10 when only ~74 unique tickers exist). This inflates the row count and makes the 1,000-row limit hit even sooner.
+### What gets built
 
-### Solution (two parts)
+**1. Store the Finviz API auth token as a secret**
+The auth token will be securely stored as `FINVIZ_AUTH_TOKEN` -- never hardcoded.
 
-**Part 1 -- Fix the query in `Backfill.tsx` to handle >1,000 rows**
+**2. Four new database tables**
 
-In the earnings query (around line 52), add pagination to fetch all rows, or -- since the dashboard already deduplicates on the frontend -- simply fetch with a higher limit to ensure all data comes through.
+All four tables share a similar schema. `rolling_market_news` has no `ticker` column; the other three do.
 
-```typescript
-// In the queryFn, add explicit pagination:
-const allData: EarningsRow[] = [];
-let offset = 0;
-const batchSize = 1000;
-let hasMore = true;
-while (hasMore) {
-  const { data, error } = await supabase
-    .from('earnings_calendar')
-    .select('ticker, report_date, fiscal_period_end, before_after_market')
-    .gte('report_date', fromDate)
-    .lte('report_date', toDate)
-    .order('report_date', { ascending: true })
-    .order('ticker', { ascending: true })
-    .range(offset, offset + batchSize - 1);
-  if (error) throw error;
-  allData.push(...(data || []));
-  hasMore = (data?.length || 0) === batchSize;
-  offset += batchSize;
-}
-return allData;
-```
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid (PK) | Auto-generated |
+| `title` | text | Article headline |
+| `source` | text | Publisher name |
+| `published_at` | timestamptz | From the CSV `Date` field |
+| `url` | text | Unique constraint -- prevents duplicates on re-fetch |
+| `category` | text | e.g. "Market", "Stock", etc. |
+| `ticker` | text | Comma-separated tickers (stock/etf/crypto tables only) |
+| `created_at` | timestamptz | When we ingested it |
 
-**Part 2 -- Clean up duplicate records (recommended)**
+RLS: Read-only for authenticated users.
 
-Run a SQL cleanup to remove the ~2,400 duplicate rows. This reduces data volume and prevents future limit issues. Duplicates share the same `ticker`, `report_date`, and `before_after_market` (all null). We keep one row per combination:
+**3. One edge function: `fetch-finviz-news`**
 
-```sql
-DELETE FROM earnings_calendar
-WHERE id NOT IN (
-  SELECT DISTINCT ON (ticker, report_date, COALESCE(before_after_market, ''))
-    id FROM earnings_calendar
-  ORDER BY ticker, report_date, COALESCE(before_after_market, ''), created_at ASC
-);
+A single function that:
+- Reads the `FINVIZ_AUTH_TOKEN` secret
+- Calls all 4 Finviz endpoints
+- Parses each CSV response
+- Upserts into the corresponding table (using `url` as the unique key so re-runs don't create duplicates)
+- Trims each table to the newest 200 rows, deleting older ones
+
+**4. Three cron jobs (weekdays only)**
+
+All three call the same edge function. Scheduled at:
+
+| Time (Chicago) | UTC (CST / winter) | Purpose |
+|---|---|---|
+| 5:00 AM | 11:00 UTC | Pre-market news sweep |
+| 11:00 AM | 17:00 UTC | Midday refresh |
+| 4:00 PM | 22:00 UTC | End-of-day refresh |
+
+Cron expressions (weekdays only):
+- `0 11 * * 1-5` (5 AM CT)
+- `0 17 * * 1-5` (11 AM CT)
+- `0 22 * * 1-5` (4 PM CT)
+
+### Data flow
+
+```text
+CRON (3x weekdays: 5am / 11am / 4pm CT)
+  |
+  v
+fetch-finviz-news (edge function)
+  |
+  +---> GET /news_export.ashx?c=1  --> parse CSV --> upsert rolling_market_news (keep 200)
+  +---> GET /news_export.ashx?v=3  --> parse CSV --> upsert rolling_stock_news  (keep 200)
+  +---> GET /news_export.ashx?v=4  --> parse CSV --> upsert rolling_etf_news    (keep 200)
+  +---> GET /news_export.ashx?v=5  --> parse CSV --> upsert rolling_crypto_news (keep 200)
 ```
 
 ### Technical Details
 
-| File | Change |
+| Item | Detail |
 |---|---|
-| `src/pages/Backfill.tsx` | Replace single query with paginated loop using `.range()` in the earnings `queryFn` |
-| Database (SQL migration) | Remove duplicate `earnings_calendar` rows, keeping the earliest `created_at` per unique combination |
+| New secret | `FINVIZ_AUTH_TOKEN` |
+| New edge function | `supabase/functions/fetch-finviz-news/index.ts` |
+| New config entry | `[functions.fetch-finviz-news]` with `verify_jwt = false` |
+| Database migration | 4 new tables with unique constraint on `url`, RLS policies |
+| Cron jobs | 3 `pg_cron` schedules via SQL insert (not migration) |
 
-### Result
-After these changes, all 23 reporting dates (Jan 12 through Feb 10) will appear on the backfill dashboard, including HOOD and the other ~74 Feb 10 tickers.
+### CSV parsing
+The Finviz CSVs use standard quoted-CSV format. The edge function will include a lightweight inline CSV parser to handle quoted fields containing commas.
+
+### Rolling window
+After each upsert, the function deletes all rows except the 200 most recent (by `published_at`) in each table. Since upserts use `url` uniqueness, running 3x/day won't create duplicates -- it will just refresh the window and catch new articles.
+
