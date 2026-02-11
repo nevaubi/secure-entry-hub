@@ -176,6 +176,135 @@ export type Database = {
         }
         Relationships: []
       }
+      rolling_crypto_news: {
+        Row: {
+          category: string
+          created_at: string
+          id: string
+          published_at: string
+          source: string
+          ticker: string | null
+          title: string
+          url: string
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          id?: string
+          published_at: string
+          source: string
+          ticker?: string | null
+          title: string
+          url: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          id?: string
+          published_at?: string
+          source?: string
+          ticker?: string | null
+          title?: string
+          url?: string
+        }
+        Relationships: []
+      }
+      rolling_etf_news: {
+        Row: {
+          category: string
+          created_at: string
+          id: string
+          published_at: string
+          source: string
+          ticker: string | null
+          title: string
+          url: string
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          id?: string
+          published_at: string
+          source: string
+          ticker?: string | null
+          title: string
+          url: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          id?: string
+          published_at?: string
+          source?: string
+          ticker?: string | null
+          title?: string
+          url?: string
+        }
+        Relationships: []
+      }
+      rolling_market_news: {
+        Row: {
+          category: string
+          created_at: string
+          id: string
+          published_at: string
+          source: string
+          title: string
+          url: string
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          id?: string
+          published_at: string
+          source: string
+          title: string
+          url: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          id?: string
+          published_at?: string
+          source?: string
+          title?: string
+          url?: string
+        }
+        Relationships: []
+      }
+      rolling_stock_news: {
+        Row: {
+          category: string
+          created_at: string
+          id: string
+          published_at: string
+          source: string
+          ticker: string | null
+          title: string
+          url: string
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          id?: string
+          published_at: string
+          source: string
+          ticker?: string | null
+          title: string
+          url: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          id?: string
+          published_at?: string
+          source?: string
+          ticker?: string | null
+          title?: string
+          url?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
