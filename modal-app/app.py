@@ -28,6 +28,7 @@ image = (
         "playwright>=1.40.0",
         "httpx>=0.27.0",
         "fastapi[standard]>=0.115.0",
+        "openai>=1.30.0",
     )
     .run_commands("playwright install chromium", "playwright install-deps chromium")
     .add_local_dir("agent", remote_path="/usr/local/lib/python3.11/site-packages/agent")
@@ -41,6 +42,7 @@ secrets = [
     modal.Secret.from_name("modal-webhook-secret"),  # MODAL_WEBHOOK_SECRET
     modal.Secret.from_name("perplexity-secret"),  # PERPLEXITY_API_KEY
     modal.Secret.from_name("gemini-secret"),  # GEMINI_API_KEY
+    modal.Secret.from_name("moonshot-secret"),  # MOONSHOT_API_KEY
 ]
 
 
