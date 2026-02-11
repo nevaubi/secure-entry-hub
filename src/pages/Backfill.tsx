@@ -49,15 +49,25 @@ const Backfill = () => {
   const { data: earnings = [], isLoading: earningsLoading, refetch: refetchEarnings } = useQuery({
     queryKey: ['backfill-earnings', fromDate, toDate],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('earnings_calendar')
-        .select('ticker, report_date, fiscal_period_end, before_after_market')
-        .gte('report_date', fromDate)
-        .lte('report_date', toDate)
-        .order('report_date', { ascending: true })
-        .order('ticker', { ascending: true });
-      if (error) throw error;
-      return (data || []) as EarningsRow[];
+      const allData: EarningsRow[] = [];
+      let offset = 0;
+      const batchSize = 1000;
+      let hasMore = true;
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('earnings_calendar')
+          .select('ticker, report_date, fiscal_period_end, before_after_market')
+          .gte('report_date', fromDate)
+          .lte('report_date', toDate)
+          .order('report_date', { ascending: true })
+          .order('ticker', { ascending: true })
+          .range(offset, offset + batchSize - 1);
+        if (error) throw error;
+        allData.push(...(data || []));
+        hasMore = (data?.length || 0) === batchSize;
+        offset += batchSize;
+      }
+      return allData;
     },
   });
 
