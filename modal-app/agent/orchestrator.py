@@ -704,7 +704,7 @@ def run_agent(ticker: str, report_date: str, timing: str, fiscal_period_end: str
                         messages=kimi_messages,
                         tools=openai_tools,
                         tool_choice="auto",
-                        thinking=True,
+                        thinking={"type": "enabled"},
                     )
 
                     choice = response.choices[0]
@@ -745,8 +745,7 @@ def run_agent(ticker: str, report_date: str, timing: str, fiscal_period_end: str
                                 for tc in msg.tool_calls
                             ],
                         }
-                        if hasattr(msg, "reasoning_content") and msg.reasoning_content:
-                            assistant_msg["reasoning_content"] = msg.reasoning_content
+                        assistant_msg["reasoning_content"] = getattr(msg, "reasoning_content", "") or ""
 
                         messages.append(assistant_msg)
 
