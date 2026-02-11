@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.backfill-trigger-single]
 verify_jwt = false
+
+[functions.fetch-finviz-news]
+verify_jwt = false
