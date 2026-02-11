@@ -8,6 +8,14 @@ const corsHeaders = {
 
 const BATCH_SIZE = 50;
 
+// Tables to sync
+const TABLES_CONFIG = [
+  "rolling_market_news",
+  "rolling_stock_news",
+  "rolling_etf_news",
+  "rolling_crypto_news",
+];
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -26,47 +34,69 @@ Deno.serve(async (req) => {
       Deno.env.get("EXTERNAL_SUPABASE_SERVICE_KEY")!
     );
 
-    // Fetch local rows with non-null summary
-    const { data: rows, error: fetchError } = await localClient
-      .from("rolling_market_news")
-      .select("title, source, published_at, url, category, summary")
-      .not("summary", "is", null)
-      .limit(300);
+    const allErrors: string[] = [];
+    let totalSynced = 0;
+    const resultsByTable: Record<string, { synced: number; errors: string[] }> = {};
 
-    if (fetchError) {
-      throw new Error(`Failed to fetch local news: ${fetchError.message}`);
-    }
+    // Process each table
+    for (const tableName of TABLES_CONFIG) {
+      console.log(`Processing table: ${tableName}`);
 
-    if (!rows || rows.length === 0) {
-      return new Response(
-        JSON.stringify({ synced: 0, errors: [], message: "No rows to sync" }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+      // Fetch local rows with non-null summary
+      const { data: rows, error: fetchError } = await localClient
+        .from(tableName)
+        .select(
+          tableName === "rolling_market_news"
+            ? "title, source, published_at, url, category, summary"
+            : "title, source, published_at, url, category, summary, ticker"
+        )
+        .not("summary", "is", null)
+        .limit(300);
 
-    console.log(`Fetched ${rows.length} rows to sync`);
-
-    const errors: string[] = [];
-    let synced = 0;
-
-    // Upsert in batches
-    for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-      const batch = rows.slice(i, i + BATCH_SIZE);
-
-      const { error: upsertError } = await externalClient
-        .from("rolling_market_news")
-        .upsert(batch, { onConflict: "url" });
-
-      if (upsertError) {
-        const msg = `Batch ${Math.floor(i / BATCH_SIZE) + 1} error: ${upsertError.message}`;
+      if (fetchError) {
+        const msg = `Failed to fetch ${tableName}: ${fetchError.message}`;
         console.error(msg);
-        errors.push(msg);
-      } else {
-        synced += batch.length;
+        allErrors.push(msg);
+        resultsByTable[tableName] = { synced: 0, errors: [msg] };
+        continue;
       }
+
+      if (!rows || rows.length === 0) {
+        console.log(`No rows to sync for ${tableName}`);
+        resultsByTable[tableName] = { synced: 0, errors: [] };
+        continue;
+      }
+
+      console.log(`Fetched ${rows.length} rows from ${tableName}`);
+
+      const tableErrors: string[] = [];
+      let tableSynced = 0;
+
+      // Upsert in batches
+      for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+        const batch = rows.slice(i, i + BATCH_SIZE);
+
+        const { error: upsertError } = await externalClient
+          .from(tableName)
+          .upsert(batch, { onConflict: "url" });
+
+        if (upsertError) {
+          const msg = `${tableName} batch ${Math.floor(i / BATCH_SIZE) + 1} error: ${upsertError.message}`;
+          console.error(msg);
+          tableErrors.push(msg);
+        } else {
+          tableSynced += batch.length;
+        }
+      }
+
+      totalSynced += tableSynced;
+      resultsByTable[tableName] = { synced: tableSynced, errors: tableErrors };
+      allErrors.push(...tableErrors);
+
+      console.log(`Synced ${tableSynced} rows to ${tableName}`);
     }
 
-    const result = { synced, errors, total_fetched: rows.length };
+    const result = { totalSynced, resultsByTable, allErrors };
     console.log("Sync complete:", JSON.stringify(result));
 
     return new Response(JSON.stringify(result), {
