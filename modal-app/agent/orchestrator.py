@@ -700,7 +700,7 @@ def run_agent(ticker: str, report_date: str, timing: str, fiscal_period_end: str
                     kimi_messages = [{"role": "system", "content": system_prompt}] + messages
                     response = llm_client.chat.completions.create(
                         model="kimi-k2.5",
-                        max_tokens=30000,
+                        max_tokens=32768,
                         temperature=1,
                         messages=kimi_messages,
                         tools=openai_tools,
@@ -746,7 +746,7 @@ def run_agent(ticker: str, report_date: str, timing: str, fiscal_period_end: str
                                 for tc in msg.tool_calls
                             ],
                         }
-                        assistant_msg["reasoning_content"] = getattr(msg, "reasoning_content", "") or ""
+                        
 
                         messages.append(assistant_msg)
 
