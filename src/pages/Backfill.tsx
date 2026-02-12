@@ -40,7 +40,7 @@ const statusColors: Record<string, string> = {
 
 const Backfill = () => {
   const [fromDate, setFromDate] = useState('2026-01-11');
-  const [toDate, setToDate] = useState('2026-02-10');
+  const [toDate, setToDate] = useState('2026-02-11');
   const [fetchResult, setFetchResult] = useState<string | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
