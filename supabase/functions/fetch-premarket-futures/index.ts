@@ -26,8 +26,8 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Step 1: Use Firecrawl to screenshot CNBC premarket page
-    console.log("Step 1: Calling Firecrawl to screenshot CNBC...");
+    // Step 1: Use Firecrawl to screenshot Yahoo Finance futures page
+    console.log("Step 1: Calling Firecrawl to screenshot Yahoo Finance...");
     const firecrawlResponse = await fetch("https://api.firecrawl.dev/v1/scrape", {
       method: "POST",
       headers: {
@@ -35,11 +35,9 @@ Deno.serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        url: "https://www.cnbc.com/",
+        url: "https://finance.yahoo.com/markets/commodities/",
         actions: [
           { type: "wait", milliseconds: 3000 },
-          { type: "click", selector: "button.MarketsBannerMenu-marketOption[aria-controls='Homepage-MarketsBanner-1-panel']" },
-          { type: "wait", milliseconds: 2000 },
           { type: "screenshot", fullPage: false },
         ],
         formats: ["screenshot"],
@@ -75,14 +73,14 @@ Deno.serve(async (req) => {
           {
             role: "system",
             content:
-              "You are a precise data extraction assistant. You will be given a screenshot of the CNBC homepage showing premarket futures data. Extract ONLY the three futures indices: DOW FUT, S&P FUT, and NAS FUT. For each, extract the price, nominal change, percent change, direction (up or down), and the last updated timestamp shown. Be extremely precise with the numbers.",
+              "You are a precise data extraction assistant. You will be given a screenshot of Yahoo Finance's futures/commodities page showing a table of futures contracts. Extract data for exactly three futures: YM=F (Mini Dow Jones), ES=F (E-Mini S&P 500), and NQ=F (Nasdaq 100). The table has columns: Symbol, Name, Price, Market Time, Change, Change %, Volume, Open Interest. Be extremely precise with the numbers. Store volume and open interest as text exactly as displayed (e.g. '1.061M', '95,915').",
           },
           {
             role: "user",
             content: [
               {
                 type: "text",
-                text: "Extract the premarket futures data from this CNBC screenshot. I need DOW FUT, S&P FUT, and NAS FUT data including price, change, percent change, direction (up/down), and the last updated timestamp.",
+                text: "Extract futures data from this Yahoo Finance screenshot. Find the rows for YM=F (Dow), ES=F (S&P 500), and NQ=F (Nasdaq 100). For each, extract: symbol, name, price, market time, change, change %, volume, and open interest.",
               },
               {
                 type: "image_url",
@@ -96,29 +94,39 @@ Deno.serve(async (req) => {
             type: "function",
             function: {
               name: "extract_premarket_futures",
-              description: "Extract premarket futures data from CNBC screenshot",
+              description: "Extract futures data from Yahoo Finance screenshot for Dow (YM=F), S&P 500 (ES=F), and Nasdaq 100 (NQ=F)",
               parameters: {
                 type: "object",
                 properties: {
-                  dow_price: { type: "number", description: "DOW Futures price" },
-                  dow_change: { type: "number", description: "DOW Futures nominal change (positive or negative)" },
-                  dow_change_pct: { type: "number", description: "DOW Futures percent change (positive or negative)" },
-                  dow_direction: { type: "string", enum: ["up", "down"], description: "DOW Futures direction" },
-                  sp500_price: { type: "number", description: "S&P 500 Futures price" },
-                  sp500_change: { type: "number", description: "S&P 500 Futures nominal change (positive or negative)" },
-                  sp500_change_pct: { type: "number", description: "S&P 500 Futures percent change (positive or negative)" },
-                  sp500_direction: { type: "string", enum: ["up", "down"], description: "S&P 500 Futures direction" },
-                  nas_price: { type: "number", description: "Nasdaq Futures price" },
-                  nas_change: { type: "number", description: "Nasdaq Futures nominal change (positive or negative)" },
-                  nas_change_pct: { type: "number", description: "Nasdaq Futures percent change (positive or negative)" },
-                  nas_direction: { type: "string", enum: ["up", "down"], description: "Nasdaq Futures direction" },
-                  last_updated: { type: "string", description: "Last updated timestamp as shown on CNBC (e.g. 'LAST | 11:15:31 AM EST')" },
+                  dow_symbol: { type: "string", description: "Dow symbol, e.g. 'YM=F'" },
+                  dow_name: { type: "string", description: "Dow contract name, e.g. 'Mini Dow Jones Indus.-$5 Jun 25'" },
+                  dow_price: { type: "number", description: "Dow futures price" },
+                  dow_market_time: { type: "string", description: "Dow market time, e.g. '11:37AM EST'" },
+                  dow_change: { type: "number", description: "Dow nominal change (positive or negative)" },
+                  dow_change_pct: { type: "number", description: "Dow percent change (positive or negative)" },
+                  dow_volume: { type: "string", description: "Dow volume as displayed, e.g. '95,915'" },
+                  dow_open_interest: { type: "string", description: "Dow open interest as displayed, e.g. '69,303'" },
+                  sp500_symbol: { type: "string", description: "S&P 500 symbol, e.g. 'ES=F'" },
+                  sp500_name: { type: "string", description: "S&P 500 contract name, e.g. 'E-Mini S&P 500 Jun 25'" },
+                  sp500_price: { type: "number", description: "S&P 500 futures price" },
+                  sp500_market_time: { type: "string", description: "S&P 500 market time" },
+                  sp500_change: { type: "number", description: "S&P 500 nominal change (positive or negative)" },
+                  sp500_change_pct: { type: "number", description: "S&P 500 percent change (positive or negative)" },
+                  sp500_volume: { type: "string", description: "S&P 500 volume as displayed, e.g. '1.061M'" },
+                  sp500_open_interest: { type: "string", description: "S&P 500 open interest as displayed, e.g. '1.895M'" },
+                  nas_symbol: { type: "string", description: "Nasdaq symbol, e.g. 'NQ=F'" },
+                  nas_name: { type: "string", description: "Nasdaq contract name, e.g. 'Nasdaq 100 Jun 25'" },
+                  nas_price: { type: "number", description: "Nasdaq futures price" },
+                  nas_market_time: { type: "string", description: "Nasdaq market time" },
+                  nas_change: { type: "number", description: "Nasdaq nominal change (positive or negative)" },
+                  nas_change_pct: { type: "number", description: "Nasdaq percent change (positive or negative)" },
+                  nas_volume: { type: "string", description: "Nasdaq volume as displayed, e.g. '448,483'" },
+                  nas_open_interest: { type: "string", description: "Nasdaq open interest as displayed, e.g. '269,452'" },
                 },
                 required: [
-                  "dow_price", "dow_change", "dow_change_pct", "dow_direction",
-                  "sp500_price", "sp500_change", "sp500_change_pct", "sp500_direction",
-                  "nas_price", "nas_change", "nas_change_pct", "nas_direction",
-                  "last_updated",
+                  "dow_symbol", "dow_name", "dow_price", "dow_market_time", "dow_change", "dow_change_pct", "dow_volume", "dow_open_interest",
+                  "sp500_symbol", "sp500_name", "sp500_price", "sp500_market_time", "sp500_change", "sp500_change_pct", "sp500_volume", "sp500_open_interest",
+                  "nas_symbol", "nas_name", "nas_price", "nas_market_time", "nas_change", "nas_change_pct", "nas_volume", "nas_open_interest",
                 ],
                 additionalProperties: false,
               },
@@ -157,19 +165,30 @@ Deno.serve(async (req) => {
       .from("recurring_premarket_data")
       .insert({
         captured_at: new Date().toISOString(),
+        dow_symbol: extracted.dow_symbol,
+        dow_name: extracted.dow_name,
         dow_price: extracted.dow_price,
+        dow_market_time: extracted.dow_market_time,
         dow_change: extracted.dow_change,
         dow_change_pct: extracted.dow_change_pct,
-        dow_direction: extracted.dow_direction,
+        dow_volume: extracted.dow_volume,
+        dow_open_interest: extracted.dow_open_interest,
+        sp500_symbol: extracted.sp500_symbol,
+        sp500_name: extracted.sp500_name,
         sp500_price: extracted.sp500_price,
+        sp500_market_time: extracted.sp500_market_time,
         sp500_change: extracted.sp500_change,
         sp500_change_pct: extracted.sp500_change_pct,
-        sp500_direction: extracted.sp500_direction,
+        sp500_volume: extracted.sp500_volume,
+        sp500_open_interest: extracted.sp500_open_interest,
+        nas_symbol: extracted.nas_symbol,
+        nas_name: extracted.nas_name,
         nas_price: extracted.nas_price,
+        nas_market_time: extracted.nas_market_time,
         nas_change: extracted.nas_change,
         nas_change_pct: extracted.nas_change_pct,
-        nas_direction: extracted.nas_direction,
-        last_updated: extracted.last_updated,
+        nas_volume: extracted.nas_volume,
+        nas_open_interest: extracted.nas_open_interest,
         screenshot_url: screenshotUrl,
         raw_gemini_response: geminiData,
       })

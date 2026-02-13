@@ -182,60 +182,93 @@ export type Database = {
           created_at: string
           dow_change: number | null
           dow_change_pct: number | null
-          dow_direction: string | null
+          dow_market_time: string | null
+          dow_name: string | null
+          dow_open_interest: string | null
           dow_price: number | null
+          dow_symbol: string | null
+          dow_volume: string | null
           id: string
-          last_updated: string | null
           nas_change: number | null
           nas_change_pct: number | null
-          nas_direction: string | null
+          nas_market_time: string | null
+          nas_name: string | null
+          nas_open_interest: string | null
           nas_price: number | null
+          nas_symbol: string | null
+          nas_volume: string | null
           raw_gemini_response: Json | null
           screenshot_url: string | null
           sp500_change: number | null
           sp500_change_pct: number | null
-          sp500_direction: string | null
+          sp500_market_time: string | null
+          sp500_name: string | null
+          sp500_open_interest: string | null
           sp500_price: number | null
+          sp500_symbol: string | null
+          sp500_volume: string | null
         }
         Insert: {
           captured_at?: string
           created_at?: string
           dow_change?: number | null
           dow_change_pct?: number | null
-          dow_direction?: string | null
+          dow_market_time?: string | null
+          dow_name?: string | null
+          dow_open_interest?: string | null
           dow_price?: number | null
+          dow_symbol?: string | null
+          dow_volume?: string | null
           id?: string
-          last_updated?: string | null
           nas_change?: number | null
           nas_change_pct?: number | null
-          nas_direction?: string | null
+          nas_market_time?: string | null
+          nas_name?: string | null
+          nas_open_interest?: string | null
           nas_price?: number | null
+          nas_symbol?: string | null
+          nas_volume?: string | null
           raw_gemini_response?: Json | null
           screenshot_url?: string | null
           sp500_change?: number | null
           sp500_change_pct?: number | null
-          sp500_direction?: string | null
+          sp500_market_time?: string | null
+          sp500_name?: string | null
+          sp500_open_interest?: string | null
           sp500_price?: number | null
+          sp500_symbol?: string | null
+          sp500_volume?: string | null
         }
         Update: {
           captured_at?: string
           created_at?: string
           dow_change?: number | null
           dow_change_pct?: number | null
-          dow_direction?: string | null
+          dow_market_time?: string | null
+          dow_name?: string | null
+          dow_open_interest?: string | null
           dow_price?: number | null
+          dow_symbol?: string | null
+          dow_volume?: string | null
           id?: string
-          last_updated?: string | null
           nas_change?: number | null
           nas_change_pct?: number | null
-          nas_direction?: string | null
+          nas_market_time?: string | null
+          nas_name?: string | null
+          nas_open_interest?: string | null
           nas_price?: number | null
+          nas_symbol?: string | null
+          nas_volume?: string | null
           raw_gemini_response?: Json | null
           screenshot_url?: string | null
           sp500_change?: number | null
           sp500_change_pct?: number | null
-          sp500_direction?: string | null
+          sp500_market_time?: string | null
+          sp500_name?: string | null
+          sp500_open_interest?: string | null
           sp500_price?: number | null
+          sp500_symbol?: string | null
+          sp500_volume?: string | null
         }
         Relationships: []
       }
