@@ -176,6 +176,69 @@ export type Database = {
         }
         Relationships: []
       }
+      recurring_premarket_data: {
+        Row: {
+          captured_at: string
+          created_at: string
+          dow_change: number | null
+          dow_change_pct: number | null
+          dow_direction: string | null
+          dow_price: number | null
+          id: string
+          last_updated: string | null
+          nas_change: number | null
+          nas_change_pct: number | null
+          nas_direction: string | null
+          nas_price: number | null
+          raw_gemini_response: Json | null
+          screenshot_url: string | null
+          sp500_change: number | null
+          sp500_change_pct: number | null
+          sp500_direction: string | null
+          sp500_price: number | null
+        }
+        Insert: {
+          captured_at?: string
+          created_at?: string
+          dow_change?: number | null
+          dow_change_pct?: number | null
+          dow_direction?: string | null
+          dow_price?: number | null
+          id?: string
+          last_updated?: string | null
+          nas_change?: number | null
+          nas_change_pct?: number | null
+          nas_direction?: string | null
+          nas_price?: number | null
+          raw_gemini_response?: Json | null
+          screenshot_url?: string | null
+          sp500_change?: number | null
+          sp500_change_pct?: number | null
+          sp500_direction?: string | null
+          sp500_price?: number | null
+        }
+        Update: {
+          captured_at?: string
+          created_at?: string
+          dow_change?: number | null
+          dow_change_pct?: number | null
+          dow_direction?: string | null
+          dow_price?: number | null
+          id?: string
+          last_updated?: string | null
+          nas_change?: number | null
+          nas_change_pct?: number | null
+          nas_direction?: string | null
+          nas_price?: number | null
+          raw_gemini_response?: Json | null
+          screenshot_url?: string | null
+          sp500_change?: number | null
+          sp500_change_pct?: number | null
+          sp500_direction?: string | null
+          sp500_price?: number | null
+        }
+        Relationships: []
+      }
       rolling_crypto_news: {
         Row: {
           category: string
