@@ -1,150 +1,76 @@
 
 
-## Automated CNBC Premarket Futures Workflow
+## Update Premarket Futures to Use Yahoo Finance
 
-### Overview
-Create a fully automated weekday workflow (6 AM Chicago Time) that:
-1. Uses Firecrawl to navigate CNBC, click the "PRE-MKT" tab, and capture a screenshot
-2. Sends the screenshot to Gemini 3 Flash Preview with strict structured extraction prompts
-3. Parses the extracted futures data (DOW FUT, S&P FUT, NAS FUT) with price, change, percent change, and timestamp
-4. Stores results in a new `recurring_premarket_data` table
+### What's Changing
 
-### Architecture
+Switch the data source from CNBC to Yahoo Finance's futures page (`https://finance.yahoo.com/markets/commodities/`) and update the database schema to match the richer data available in Yahoo's table.
 
-The workflow integrates three existing project components:
-- **Firecrawl** (already configured via FIRECRAWL_API_KEY) — headless browser + screenshot
-- **Lovable AI Gateway** (LOVABLE_API_KEY already available) — Gemini 3 Flash Preview for vision extraction
-- **pg_cron** (already in use) — weekday morning scheduling at 6 AM CT
+### New Schema for `recurring_premarket_data`
 
-### Step 1: Create the `recurring_premarket_data` Table
+The Yahoo Finance futures table provides more structured data than CNBC's banner. We'll add columns for symbol, name, market time, volume, and open interest, and remove the `direction` columns (since direction is implicit from the sign of the change value).
 
-New table schema to store daily premarket futures snapshots:
-
+**Add columns:**
 | Column | Type | Description |
 |--------|------|-------------|
-| id | uuid (PK) | Auto-generated |
-| captured_at | timestamptz | When the screenshot was taken |
-| dow_price | numeric | DOW Futures price |
-| dow_change | numeric | DOW change amount |
-| dow_change_pct | numeric | DOW change percent |
-| dow_direction | text | 'up' or 'down' |
-| sp500_price | numeric | S&P 500 Futures price |
-| sp500_change | numeric | S&P 500 change amount |
-| sp500_change_pct | numeric | S&P 500 change percent |
-| sp500_direction | text | 'up' or 'down' |
-| nas_price | numeric | Nasdaq Futures price |
-| nas_change | numeric | Nasdaq change amount |
-| nas_change_pct | numeric | Nasdaq change percent |
-| nas_direction | text | 'up' or 'down' |
-| last_updated | text | Timestamp from CNBC screenshot (e.g., "LAST | 11:15:31 AM EST") |
-| screenshot_url | text | Firecrawl screenshot URL (expires 24h) |
-| raw_gemini_response | jsonb | Full LLM extraction response for debugging |
-| created_at | timestamptz | Row creation timestamp |
+| dow_symbol | text | e.g. "YM=F" |
+| dow_name | text | e.g. "Mini Dow Jones Indus..." |
+| dow_market_time | text | e.g. "11:37AM EST" |
+| dow_volume | text | e.g. "95,915" (stored as text to preserve formatting) |
+| dow_open_interest | text | e.g. "69,303" |
+| sp500_symbol | text | e.g. "ES=F" |
+| sp500_name | text | e.g. "E-Mini S&P 500 Mar 26" |
+| sp500_market_time | text | e.g. "11:37AM EST" |
+| sp500_volume | text | e.g. "1.061M" |
+| sp500_open_interest | text | e.g. "1.895M" |
+| nas_symbol | text | e.g. "NQ=F" |
+| nas_name | text | e.g. "Nasdaq 100 Mar 26" |
+| nas_market_time | text | e.g. "11:37AM EST" |
+| nas_volume | text | e.g. "448,483" |
+| nas_open_interest | text | e.g. "269,452" |
 
-RLS policy: Authenticated users can SELECT only.
+**Remove columns** (direction is now derived from change sign):
+- dow_direction
+- sp500_direction
+- nas_direction
+- last_updated (replaced by per-index market_time)
 
-### Step 2: Create the `fetch-premarket-futures` Edge Function
+### Edge Function Changes
 
-**Location**: `supabase/functions/fetch-premarket-futures/index.ts`
+**File:** `supabase/functions/fetch-premarket-futures/index.ts`
 
-**Workflow**:
-1. Call Firecrawl scrape API with:
-   - URL: `https://www.cnbc.com/`
-   - Actions: navigate page, click the PRE-MKT button (`MarketsBannerMenu-activeMarket` class), take screenshot
-   - Format: `["screenshot"]`
+1. Change URL from `https://www.cnbc.com/` to `https://finance.yahoo.com/markets/commodities/`
+2. Remove the click action (no button to click -- the futures table is already visible on the page)
+3. Update the Gemini prompt to reference Yahoo Finance's futures table with columns: Symbol, Name, Price, Market Time, Change, Change %, Volume, Open Interest
+4. Update the tool calling schema to include all new fields (symbol, name, market_time, volume, open_interest per index) and remove direction/last_updated
+5. Update the DB insert to match new columns
 
-2. Send the screenshot to Lovable AI Gateway (Gemini 3 Flash Preview) with:
-   - **Strict system prompt**: Extract ONLY the three futures indices data visible in premarket banner
-   - **Image input**: Base64 or URL from Firecrawl screenshot
-   - **Tool calling**: Use structured JSON response format requesting exact fields (dow_price, dow_change, dow_change_pct, dow_direction, sp500_price, sp500_change, sp500_change_pct, sp500_direction, nas_price, nas_change, nas_change_pct, nas_direction, last_updated)
-   - **Error handling**: If extraction fails or fields are missing, log and retry once
+### Database Migration
 
-3. Parse Gemini response and insert into `recurring_premarket_data`:
-   - Validate all required numeric fields are present
-   - Parse direction from the up/down arrow indicators
-   - Extract timestamp from CNBC
-   - Store raw response for debugging
+Single migration to:
+- Add 15 new columns (symbol, name, market_time, volume, open_interest x3 indices)
+- Drop 4 old columns (dow_direction, sp500_direction, nas_direction, last_updated)
 
-4. Return success/failure status with extracted data
+### No Other Changes Needed
 
-**Error Handling**:
-- Missing FIRECRAWL_API_KEY or LOVABLE_API_KEY → return 500 with clear error
-- Firecrawl timeout/failure → return 500 with error details
-- Gemini extraction failure → return 500 with error details
-- Missing fields in Gemini response → log warning, insert partial data with nulls, continue
+- The pg_cron schedule stays the same (weekday 6 AM CT)
+- Config.toml entry already exists
+- RLS policies remain unchanged
 
-**Configuration**:
-- Update `supabase/config.toml` to add:
-  ```toml
-  [functions.fetch-premarket-futures]
-  verify_jwt = false
-  ```
+### Technical Details
 
-### Step 3: Schedule via pg_cron
-
-6:00 AM Chicago Time = 12:00 UTC
-
-Create a cron job to invoke the edge function:
-```sql
-SELECT cron.schedule(
-  'fetch-premarket-futures-weekday-morning',
-  '0 12 * * 1-5',  -- 6 AM CT / 12 PM UTC, weekdays only
-  $$
-  SELECT net.http_post(
-    url := 'https://{project-id}.supabase.co/functions/v1/fetch-premarket-futures',
-    headers := '{"Content-Type": "application/json", "Authorization": "Bearer {SUPABASE_ANON_KEY}"}'::jsonb,
-    body := '{"trigger": "cron"}'::jsonb
-  ) AS request_id;
-  $$
-);
-```
-
-### Technical Implementation Details
-
-**Edge Function Features**:
-- Use `FIRECRAWL_API_KEY` for browser automation
-- Use `LOVABLE_API_KEY` for Gemini gateway calls via `https://ai.gateway.lovable.dev/v1/chat/completions`
-- Service role Supabase client for direct table inserts (no RLS restrictions)
-- Proper error logging with timestamps for debugging
-
-**Gemini 3 Flash Preview Configuration**:
-- Model: `google/gemini-3-flash-preview`
-- Tool choice: Use structured function calling to ensure JSON output
-- Tool schema: Define extraction function with required fields (dow_price, dow_change, dow_change_pct, dow_direction, sp500_price, sp500_change, sp500_change_pct, sp500_direction, nas_price, nas_change, nas_change_pct, nas_direction, last_updated)
-
-**Firecrawl Screenshot Configuration**:
+**Firecrawl config (simplified -- no click needed):**
 ```javascript
 {
-  url: "https://www.cnbc.com/",
+  url: "https://finance.yahoo.com/markets/commodities/",
   actions: [
     { type: "wait", milliseconds: 3000 },
-    { type: "click", selector: ".MarketsBannerMenu-activeMarket" },
-    { type: "wait", milliseconds: 1500 },
     { type: "screenshot", fullPage: false }
   ],
   formats: ["screenshot"]
 }
 ```
 
-### Files to Create/Modify
+**Gemini extraction tool schema** will request: dow_symbol, dow_name, dow_price, dow_market_time, dow_change, dow_change_pct, dow_volume, dow_open_interest (and same for sp500/nas prefixes).
 
-1. **Database Migration** — Create `recurring_premarket_data` table with schema above
-2. **Edge Function** — `supabase/functions/fetch-premarket-futures/index.ts`
-3. **Config Update** — Add function entry to `supabase/config.toml`
-4. **Cron Job** — SQL insert to `cron.job` table (via direct SQL execution, not migration)
-
-### Timeline & Dependencies
-
-1. Create table (migration)
-2. Create edge function code
-3. Deploy function (auto-deployed when code is written)
-4. Register cron job (SQL executed after function is live)
-
-### Testing Plan
-
-- Manual function invocation via the backend interface to verify:
-  - Firecrawl screenshot successfully captures CNBC PRE-MKT tab
-  - Gemini extraction returns valid JSON with all required fields
-  - Data inserts successfully into `recurring_premarket_data`
-- Verify cron schedule is registered and runs at 6 AM CT on next weekday morning
-
+**Prompt** will instruct Gemini to find the rows for ES=F (S&P 500), YM=F (Dow), and NQ=F (Nasdaq 100) specifically from the Yahoo Finance futures table.
