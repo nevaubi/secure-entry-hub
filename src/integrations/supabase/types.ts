@@ -180,6 +180,14 @@ export type Database = {
         Row: {
           captured_at: string
           created_at: string
+          crude_change: number | null
+          crude_change_pct: number | null
+          crude_market_time: string | null
+          crude_name: string | null
+          crude_open_interest: string | null
+          crude_price: number | null
+          crude_symbol: string | null
+          crude_volume: string | null
           dow_change: number | null
           dow_change_pct: number | null
           dow_market_time: string | null
@@ -188,6 +196,14 @@ export type Database = {
           dow_price: number | null
           dow_symbol: string | null
           dow_volume: string | null
+          gold_change: number | null
+          gold_change_pct: number | null
+          gold_market_time: string | null
+          gold_name: string | null
+          gold_open_interest: string | null
+          gold_price: number | null
+          gold_symbol: string | null
+          gold_volume: string | null
           id: string
           nas_change: number | null
           nas_change_pct: number | null
@@ -199,6 +215,14 @@ export type Database = {
           nas_volume: string | null
           raw_gemini_response: Json | null
           screenshot_url: string | null
+          silver_change: number | null
+          silver_change_pct: number | null
+          silver_market_time: string | null
+          silver_name: string | null
+          silver_open_interest: string | null
+          silver_price: number | null
+          silver_symbol: string | null
+          silver_volume: string | null
           sp500_change: number | null
           sp500_change_pct: number | null
           sp500_market_time: string | null
@@ -207,10 +231,42 @@ export type Database = {
           sp500_price: number | null
           sp500_symbol: string | null
           sp500_volume: string | null
+          tnote10_change: number | null
+          tnote10_change_pct: number | null
+          tnote10_market_time: string | null
+          tnote10_name: string | null
+          tnote10_open_interest: string | null
+          tnote10_price: number | null
+          tnote10_symbol: string | null
+          tnote10_volume: string | null
+          tnote2_change: number | null
+          tnote2_change_pct: number | null
+          tnote2_market_time: string | null
+          tnote2_name: string | null
+          tnote2_open_interest: string | null
+          tnote2_price: number | null
+          tnote2_symbol: string | null
+          tnote2_volume: string | null
+          tnote5_change: number | null
+          tnote5_change_pct: number | null
+          tnote5_market_time: string | null
+          tnote5_name: string | null
+          tnote5_open_interest: string | null
+          tnote5_price: number | null
+          tnote5_symbol: string | null
+          tnote5_volume: string | null
         }
         Insert: {
           captured_at?: string
           created_at?: string
+          crude_change?: number | null
+          crude_change_pct?: number | null
+          crude_market_time?: string | null
+          crude_name?: string | null
+          crude_open_interest?: string | null
+          crude_price?: number | null
+          crude_symbol?: string | null
+          crude_volume?: string | null
           dow_change?: number | null
           dow_change_pct?: number | null
           dow_market_time?: string | null
@@ -219,6 +275,14 @@ export type Database = {
           dow_price?: number | null
           dow_symbol?: string | null
           dow_volume?: string | null
+          gold_change?: number | null
+          gold_change_pct?: number | null
+          gold_market_time?: string | null
+          gold_name?: string | null
+          gold_open_interest?: string | null
+          gold_price?: number | null
+          gold_symbol?: string | null
+          gold_volume?: string | null
           id?: string
           nas_change?: number | null
           nas_change_pct?: number | null
@@ -230,6 +294,14 @@ export type Database = {
           nas_volume?: string | null
           raw_gemini_response?: Json | null
           screenshot_url?: string | null
+          silver_change?: number | null
+          silver_change_pct?: number | null
+          silver_market_time?: string | null
+          silver_name?: string | null
+          silver_open_interest?: string | null
+          silver_price?: number | null
+          silver_symbol?: string | null
+          silver_volume?: string | null
           sp500_change?: number | null
           sp500_change_pct?: number | null
           sp500_market_time?: string | null
@@ -238,10 +310,42 @@ export type Database = {
           sp500_price?: number | null
           sp500_symbol?: string | null
           sp500_volume?: string | null
+          tnote10_change?: number | null
+          tnote10_change_pct?: number | null
+          tnote10_market_time?: string | null
+          tnote10_name?: string | null
+          tnote10_open_interest?: string | null
+          tnote10_price?: number | null
+          tnote10_symbol?: string | null
+          tnote10_volume?: string | null
+          tnote2_change?: number | null
+          tnote2_change_pct?: number | null
+          tnote2_market_time?: string | null
+          tnote2_name?: string | null
+          tnote2_open_interest?: string | null
+          tnote2_price?: number | null
+          tnote2_symbol?: string | null
+          tnote2_volume?: string | null
+          tnote5_change?: number | null
+          tnote5_change_pct?: number | null
+          tnote5_market_time?: string | null
+          tnote5_name?: string | null
+          tnote5_open_interest?: string | null
+          tnote5_price?: number | null
+          tnote5_symbol?: string | null
+          tnote5_volume?: string | null
         }
         Update: {
           captured_at?: string
           created_at?: string
+          crude_change?: number | null
+          crude_change_pct?: number | null
+          crude_market_time?: string | null
+          crude_name?: string | null
+          crude_open_interest?: string | null
+          crude_price?: number | null
+          crude_symbol?: string | null
+          crude_volume?: string | null
           dow_change?: number | null
           dow_change_pct?: number | null
           dow_market_time?: string | null
@@ -250,6 +354,14 @@ export type Database = {
           dow_price?: number | null
           dow_symbol?: string | null
           dow_volume?: string | null
+          gold_change?: number | null
+          gold_change_pct?: number | null
+          gold_market_time?: string | null
+          gold_name?: string | null
+          gold_open_interest?: string | null
+          gold_price?: number | null
+          gold_symbol?: string | null
+          gold_volume?: string | null
           id?: string
           nas_change?: number | null
           nas_change_pct?: number | null
@@ -261,6 +373,14 @@ export type Database = {
           nas_volume?: string | null
           raw_gemini_response?: Json | null
           screenshot_url?: string | null
+          silver_change?: number | null
+          silver_change_pct?: number | null
+          silver_market_time?: string | null
+          silver_name?: string | null
+          silver_open_interest?: string | null
+          silver_price?: number | null
+          silver_symbol?: string | null
+          silver_volume?: string | null
           sp500_change?: number | null
           sp500_change_pct?: number | null
           sp500_market_time?: string | null
@@ -269,6 +389,30 @@ export type Database = {
           sp500_price?: number | null
           sp500_symbol?: string | null
           sp500_volume?: string | null
+          tnote10_change?: number | null
+          tnote10_change_pct?: number | null
+          tnote10_market_time?: string | null
+          tnote10_name?: string | null
+          tnote10_open_interest?: string | null
+          tnote10_price?: number | null
+          tnote10_symbol?: string | null
+          tnote10_volume?: string | null
+          tnote2_change?: number | null
+          tnote2_change_pct?: number | null
+          tnote2_market_time?: string | null
+          tnote2_name?: string | null
+          tnote2_open_interest?: string | null
+          tnote2_price?: number | null
+          tnote2_symbol?: string | null
+          tnote2_volume?: string | null
+          tnote5_change?: number | null
+          tnote5_change_pct?: number | null
+          tnote5_market_time?: string | null
+          tnote5_name?: string | null
+          tnote5_open_interest?: string | null
+          tnote5_price?: number | null
+          tnote5_symbol?: string | null
+          tnote5_volume?: string | null
         }
         Relationships: []
       }
