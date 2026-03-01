@@ -1,0 +1,792 @@
+const puppeteer = require('puppeteer'); // v23.0.0 or later
+
+(async () => {
+    const browser = await puppeteer.launch();
+    const page = await browser.newPage();
+    const timeout = 5000;
+    page.setDefaultTimeout(timeout);
+
+    {
+        const targetPage = page;
+        await targetPage.setViewport({
+            width: 1189,
+            height: 657
+        })
+    }
+    {
+        const targetPage = page;
+        await targetPage.goto('edge://newtab/?startpage=1');
+    }
+    {
+        const targetPage = page;
+        await targetPage.goto('https://stockanalysis.com/');
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Log In)'),
+            targetPage.locator('a.h-full'),
+            targetPage.locator('::-p-xpath(/html/body/div/header/div/div[2]/a[1])'),
+            targetPage.locator(':scope >>> a.h-full'),
+            targetPage.locator('::-p-text(Log In)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 58.3233642578125,
+                y: 26.003967761993408,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Email address)'),
+            targetPage.locator('#email'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"email\\"])'),
+            targetPage.locator(':scope >>> #email')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 177.17059326171875,
+                y: 23.549591064453125,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Email address)'),
+            targetPage.locator('#email'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"email\\"])'),
+            targetPage.locator(':scope >>> #email')
+        ])
+            .setTimeout(timeout)
+            .fill('nshahh10@gmail.com');
+    }
+    {
+        const targetPage = page;
+        await targetPage.keyboard.down('Tab');
+    }
+    {
+        const targetPage = page;
+        await targetPage.keyboard.up('Tab');
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Password)'),
+            targetPage.locator('#password'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"password\\"])'),
+            targetPage.locator(':scope >>> #password')
+        ])
+            .setTimeout(timeout)
+            .fill('Goku76ssj3!');
+    }
+    {
+        const targetPage = page;
+        const promises = [];
+        const startWaitingForEvents = () => {
+            promises.push(targetPage.waitForNavigation());
+        }
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Log In[role=\\"button\\"])'),
+            targetPage.locator('form > button'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div/form/button)'),
+            targetPage.locator(':scope >>> form > button')
+        ])
+            .setTimeout(timeout)
+            .on('action', () => startWaitingForEvents())
+            .click({
+              offset: {
+                x: 98.17059326171875,
+                y: 10.05950927734375,
+              },
+            });
+        await Promise.all(promises);
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria([role=\\"banner\\"]) >>>> ::-p-aria(Search for stocks, funds, and more)'),
+            targetPage.locator('#search-header'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"search-header\\"])'),
+            targetPage.locator(':scope >>> #search-header')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 297.9642791748047,
+                y: 14.003967761993408,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria([role=\\"banner\\"]) >>>> ::-p-aria(Search for stocks, funds, and more)'),
+            targetPage.locator('#search-header'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"search-header\\"])'),
+            targetPage.locator(':scope >>> #search-header')
+        ])
+            .setTimeout(timeout)
+            .fill('AAOI');
+    }
+    {
+        const targetPage = page;
+        await targetPage.keyboard.down('Enter');
+    }
+    {
+        const targetPage = page;
+        await targetPage.keyboard.up('Enter');
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Financials)'),
+            targetPage.locator('div.grow > div:nth-of-type(2) li:nth-of-type(2) > a'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[1]/nav/ul/li[2]/a)'),
+            targetPage.locator(':scope >>> div.grow > div:nth-of-type(2) li:nth-of-type(2) > a'),
+            targetPage.locator('::-p-text(Financials)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 63.4305419921875,
+                y: 18.482131958007812,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Income Statement)'),
+            targetPage.locator('div.flex li:nth-of-type(1) > a'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[2]/nav[1]/ul/li[1]/a)'),
+            targetPage.locator(':scope >>> div.flex li:nth-of-type(1) > a')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 91.36309814453125,
+                y: 17.59124755859375,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Standardized)'),
+            targetPage.locator('div.grow button.rounded-l-md'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[3]/div[2]/div[1]/div/button[1])'),
+            targetPage.locator(':scope >>> div.grow button.rounded-l-md'),
+            targetPage.locator('::-p-text(Standardized)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 77.36309814453125,
+                y: 18.613067626953125,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Millions)'),
+            targetPage.locator('#dropdown-btn-rrrc4kv'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"dropdown-btn-rrrc4kv\\"])'),
+            targetPage.locator(':scope >>> #dropdown-btn-rrrc4kv'),
+            targetPage.locator('::-p-text(Mil Millions)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 71.13885498046875,
+                y: 21.613067626953125,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Raw)'),
+            targetPage.locator('button:nth-of-type(4)'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[3]/div[2]/div[2]/div[1]/div/button[4])'),
+            targetPage.locator(':scope >>> button:nth-of-type(4)'),
+            targetPage.locator('::-p-text(Raw)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 55.74798583984375,
+                y: 8.38092041015625,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Data Source)'),
+            targetPage.locator('#dropdown-btn-pfo3t8b'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"dropdown-btn-pfo3t8b\\"])'),
+            targetPage.locator(':scope >>> #dropdown-btn-pfo3t8b'),
+            targetPage.locator('::-p-text(Data Data Source)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 92.7618408203125,
+                y: 28.613067626953125,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Fiscal.ai)'),
+            targetPage.locator('div.flex > div.flex > div:nth-of-type(2) button:nth-of-type(2)'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[3]/div[2]/div[2]/div[2]/div/button[2])'),
+            targetPage.locator(':scope >>> div.flex > div.flex > div:nth-of-type(2) button:nth-of-type(2)'),
+            targetPage.locator('::-p-text(Fiscal.ai)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 54.49798583984375,
+                y: 13.36505126953125,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Annual)'),
+            targetPage.locator('li:nth-of-type(1) > button'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[2]/nav[2]/ul/li[1]/button)'),
+            targetPage.locator(':scope >>> li:nth-of-type(1) > button'),
+            targetPage.locator('::-p-text(Annual)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 46.208251953125,
+                y: 12.59124755859375,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Quarterly)'),
+            targetPage.locator('li:nth-of-type(2) > button'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[2]/nav[2]/ul/li[2]/button)'),
+            targetPage.locator(':scope >>> li:nth-of-type(2) > button'),
+            targetPage.locator('::-p-text(Quarterly)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 52.9344482421875,
+                y: 23.59124755859375,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Balance Sheet)'),
+            targetPage.locator('div.flex li:nth-of-type(2) > a'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[2]/nav[1]/ul/li[2]/a)'),
+            targetPage.locator(':scope >>> div.flex li:nth-of-type(2) > a'),
+            targetPage.locator('::-p-text(Balance Sheet)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 74.8690185546875,
+                y: 27.59124755859375,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Annual)'),
+            targetPage.locator('li:nth-of-type(1) > button'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[2]/nav[2]/ul/li[1]/button)'),
+            targetPage.locator(':scope >>> li:nth-of-type(1) > button'),
+            targetPage.locator('::-p-text(Annual)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 34.22021484375,
+                y: 24.59124755859375,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Quarterly)'),
+            targetPage.locator('li:nth-of-type(2) > button'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[2]/nav[2]/ul/li[2]/button)'),
+            targetPage.locator(':scope >>> li:nth-of-type(2) > button'),
+            targetPage.locator('::-p-text(Quarterly)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 37.9344482421875,
+                y: 26.59124755859375,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Cash Flow)'),
+            targetPage.locator('div.flex li:nth-of-type(3) > a'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[2]/nav[1]/ul/li[3]/a)'),
+            targetPage.locator(':scope >>> div.flex li:nth-of-type(3) > a'),
+            targetPage.locator('::-p-text(Cash Flow)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 60.7122802734375,
+                y: 27.59124755859375,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Annual)'),
+            targetPage.locator('li:nth-of-type(1) > button'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[2]/nav[2]/ul/li[1]/button)'),
+            targetPage.locator(':scope >>> li:nth-of-type(1) > button'),
+            targetPage.locator('::-p-text(Annual)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 27.22021484375,
+                y: 20.59124755859375,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Quarterly)'),
+            targetPage.locator('li:nth-of-type(2) > button'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[2]/nav[2]/ul/li[2]/button)'),
+            targetPage.locator(':scope >>> li:nth-of-type(2) > button'),
+            targetPage.locator('::-p-text(Quarterly)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 41.9344482421875,
+                y: 19.59124755859375,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Ratios)'),
+            targetPage.locator('div.flex li:nth-of-type(4) > a'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[2]/nav[1]/ul/li[4]/a)'),
+            targetPage.locator(':scope >>> div.flex li:nth-of-type(4) > a'),
+            targetPage.locator('::-p-text(Ratios)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 19.81744384765625,
+                y: 27.59124755859375,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Current[role=\\"button\\"])'),
+            targetPage.locator('button.py-2'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[3]/div[2]/div/button[1])'),
+            targetPage.locator(':scope >>> button.py-2')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 21.71026611328125,
+                y: 11.8670654296875,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Annual)'),
+            targetPage.locator('li:nth-of-type(1) > button'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[2]/nav[2]/ul/li[1]/button)'),
+            targetPage.locator(':scope >>> li:nth-of-type(1) > button'),
+            targetPage.locator('::-p-text(Annual)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 36.22021484375,
+                y: 30.59124755859375,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Quarterly)'),
+            targetPage.locator('li:nth-of-type(2) > button'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[2]/nav[2]/ul/li[2]/button)'),
+            targetPage.locator(':scope >>> li:nth-of-type(2) > button'),
+            targetPage.locator('::-p-text(Quarterly)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 37.9344482421875,
+                y: 24.59124755859375,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Search for stocks, funds, and more)'),
+            targetPage.locator('#search-header'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"search-header\\"])'),
+            targetPage.locator(':scope >>> #search-header')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 329.9642791748047,
+                y: 29.003967761993408,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria([role=\\"banner\\"]) >>>> ::-p-aria(Search for stocks, funds, and more)'),
+            targetPage.locator('#search-header'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"search-header\\"])'),
+            targetPage.locator(':scope >>> #search-header')
+        ])
+            .setTimeout(timeout)
+            .fill('DUOL');
+    }
+    {
+        const targetPage = page;
+        await targetPage.keyboard.down('Enter');
+    }
+    {
+        const targetPage = page;
+        await targetPage.keyboard.up('Enter');
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Income Statement)'),
+            targetPage.locator('div.flex li:nth-of-type(1) > a'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[2]/nav[1]/ul/li[1]/a)'),
+            targetPage.locator(':scope >>> div.flex li:nth-of-type(1) > a'),
+            targetPage.locator('::-p-text(Income Statement)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 49.36309814453125,
+                y: 17.59124755859375,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Standardized)'),
+            targetPage.locator('div.grow button.rounded-l-md'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[3]/div[2]/div[1]/div/button[1])'),
+            targetPage.locator(':scope >>> div.grow button.rounded-l-md'),
+            targetPage.locator('::-p-text(Standardized)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 98.36309814453125,
+                y: 19.613067626953125,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Raw)'),
+            targetPage.locator('#dropdown-btn-55nragb'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"dropdown-btn-55nragb\\"])'),
+            targetPage.locator(':scope >>> #dropdown-btn-55nragb'),
+            targetPage.locator('::-p-text(Raw Raw)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 41.44244384765625,
+                y: 6.613067626953125,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria([role=\\"menu\\"]) >>>> ::-p-aria(Raw[role=\\"button\\"])'),
+            targetPage.locator('div.flex > div.flex button.active'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[3]/div[2]/div[2]/div[1]/div/button[4])'),
+            targetPage.locator(':scope >>> div.flex > div.flex button.active')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 25.5733642578125,
+                y: 19.38092041015625,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Fiscal.ai[role=\\"button\\"]) >>>> ::-p-aria([role=\\"generic\\"])'),
+            targetPage.locator('div.flex > div.flex > div:nth-of-type(2) span.hidden'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"dropdown-btn-zj3kr8d\\"]/span[2])'),
+            targetPage.locator(':scope >>> div.flex > div.flex > div:nth-of-type(2) span.hidden')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 10.9603271484375,
+                y: 17.98211669921875,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria([role=\\"menu\\"]) >>>> ::-p-aria(Fiscal.ai[role=\\"button\\"])'),
+            targetPage.locator('div.flex > div.flex button.active'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[3]/div[2]/div[2]/div[2]/div/button[2])'),
+            targetPage.locator(':scope >>> div.flex > div.flex button.active')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 69.49798583984375,
+                y: 16.36505126953125,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Annual)'),
+            targetPage.locator('li:nth-of-type(1) > button'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[2]/nav[2]/ul/li[1]/button)'),
+            targetPage.locator(':scope >>> li:nth-of-type(1) > button'),
+            targetPage.locator('::-p-text(Annual)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 41.22021484375,
+                y: 23.59124755859375,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Quarterly)'),
+            targetPage.locator('li:nth-of-type(2) > button'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[2]/nav[2]/ul/li[2]/button)'),
+            targetPage.locator(':scope >>> li:nth-of-type(2) > button'),
+            targetPage.locator('::-p-text(Quarterly)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 39.9344482421875,
+                y: 21.59124755859375,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Balance Sheet)'),
+            targetPage.locator('div.flex li:nth-of-type(2) > a'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[2]/nav[1]/ul/li[2]/a)'),
+            targetPage.locator(':scope >>> div.flex li:nth-of-type(2) > a'),
+            targetPage.locator('::-p-text(Balance Sheet)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 75.8690185546875,
+                y: 27.59124755859375,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Annual)'),
+            targetPage.locator('li:nth-of-type(1) > button'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[2]/nav[2]/ul/li[1]/button)'),
+            targetPage.locator(':scope >>> li:nth-of-type(1) > button'),
+            targetPage.locator('::-p-text(Annual)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 47.22021484375,
+                y: 29.59124755859375,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Quarterly)'),
+            targetPage.locator('li:nth-of-type(2) > button'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[2]/nav[2]/ul/li[2]/button)'),
+            targetPage.locator(':scope >>> li:nth-of-type(2) > button'),
+            targetPage.locator('::-p-text(Quarterly)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 39.9344482421875,
+                y: 20.59124755859375,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Cash Flow)'),
+            targetPage.locator('div.flex li:nth-of-type(3) > a'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[2]/nav[1]/ul/li[3]/a)'),
+            targetPage.locator(':scope >>> div.flex li:nth-of-type(3) > a'),
+            targetPage.locator('::-p-text(Cash Flow)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 75.7122802734375,
+                y: 31.59124755859375,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Annual)'),
+            targetPage.locator('li:nth-of-type(1) > button'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[2]/nav[2]/ul/li[1]/button)'),
+            targetPage.locator(':scope >>> li:nth-of-type(1) > button'),
+            targetPage.locator('::-p-text(Annual)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 32.22021484375,
+                y: 31.59124755859375,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Quarterly)'),
+            targetPage.locator('li:nth-of-type(2) > button'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[2]/nav[2]/ul/li[2]/button)'),
+            targetPage.locator(':scope >>> li:nth-of-type(2) > button'),
+            targetPage.locator('::-p-text(Quarterly)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 44.9344482421875,
+                y: 29.59124755859375,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Ratios)'),
+            targetPage.locator('div.flex li:nth-of-type(4) > a'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[2]/nav[1]/ul/li[4]/a)'),
+            targetPage.locator(':scope >>> div.flex li:nth-of-type(4) > a'),
+            targetPage.locator('::-p-text(Ratios)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 46.81744384765625,
+                y: 29.59124755859375,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Annual)'),
+            targetPage.locator('li:nth-of-type(1) > button'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[2]/nav[2]/ul/li[1]/button)'),
+            targetPage.locator(':scope >>> li:nth-of-type(1) > button'),
+            targetPage.locator('::-p-text(Annual)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 23.22021484375,
+                y: 26.59124755859375,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('::-p-aria(Quarterly)'),
+            targetPage.locator('li:nth-of-type(2) > button'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"main\\"]/div[2]/nav[2]/ul/li[2]/button)'),
+            targetPage.locator(':scope >>> li:nth-of-type(2) > button'),
+            targetPage.locator('::-p-text(Quarterly)')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 43.9344482421875,
+                y: 19.59124755859375,
+              },
+            });
+    }
+
+    await browser.close();
+
+})().catch(err => {
+    console.error(err);
+    process.exit(1);
+});
