@@ -1,27 +1,30 @@
 
 
-## Plan: Add "Backfill2" Page for Standardized Agent
+## Plan: Add report_date, timing, fiscal_period_end to Backfill2 UI and edge function
 
-### What it does
-A new `/backfill2` page with:
-1. **Manual trigger** — text input for ticker + "Process" button that calls `trigger-standardized-agent`
-2. **Processing runs table** — shows all `standardized_processing_runs` rows with status badges (pending/completed/failed), error messages, files_updated count, timestamps
-3. **Auto-refresh** — polls every 10 seconds to show live status updates
-4. **Row actions** — mark completed/failed, reset (delete) run, re-trigger
+### Problem
+The Modal webhook expects `report_date` and `timing` per ticker (same as the as-reported agent). The current `trigger-standardized-agent` edge function and Backfill2 UI only send `ticker`, causing `KeyError: 'report_date'`.
 
-### Files to create/modify
+### Changes
 
-| Action | File | Detail |
-|---|---|---|
-| Create | `src/pages/Backfill2.tsx` | New page: ticker input + trigger button + runs table with status/error display, polling via `refetchInterval: 10000` |
-| Modify | `src/components/TopNavbar.tsx` | Add `{ label: 'Backfill2', to: '/backfill2' }` to navItems |
-| Modify | `src/App.tsx` | Add `/backfill2` route wrapped in `ProtectedRoute` |
+**1. Update `src/pages/Backfill2.tsx`**
+- Add `reportDate` state (date input, default today)
+- Add `timing` state (select: "premarket" or "afterhours", default "afterhours")
+- Add optional `fiscalPeriodEnd` state (date input, optional)
+- Pass all fields in the `trigger-standardized-agent` invocation body: `{ ticker, report_date, timing, fiscal_period_end }`
+- Show `report_date` and `timing` columns in the runs table (if the DB table has them — will check)
 
-### Database change needed
-The `standardized_processing_runs` table is missing an INSERT policy for authenticated users. The edge function inserts using the service role key so it works, but the UI needs SELECT (already exists) + DELETE (already exists) + UPDATE (already exists). No migration needed — the existing policies cover the UI's needs (it only reads, updates, and deletes).
+**2. Update `supabase/functions/trigger-standardized-agent/index.ts`**
+- Accept `report_date`, `timing`, `fiscal_period_end` from the request body
+- Validate `report_date` and `timing` are present
+- Pass them through in the Modal webhook payload: `tickers: [{ ticker, report_date, fiscal_period_end, timing }]`
+- Store `report_date` and `timing` in the `standardized_processing_runs` DB record
 
-### UI layout for Backfill2.tsx
-- **Card 1: Trigger** — Input field for ticker, "Process" button that invokes `trigger-standardized-agent` edge function
-- **Card 2: Summary stats** — Total / Completed / In Progress / Failed counts
-- **Card 3: Runs table** — Columns: Ticker, Status, Files Updated, Started At, Completed At, Error, Actions (mark complete/failed/reset/re-trigger)
+**3. Database migration (if needed)**
+- Check if `standardized_processing_runs` has `report_date` and `timing` columns — if not, add them
+
+### Technical details
+- The edge function payload to Modal will match the existing webhook signature: `{ tickers: [{ ticker, report_date, timing, fiscal_period_end }], callback_url }`
+- The UI form will have 4 fields in a row: Ticker (text), Report Date (date), Timing (select), Fiscal Period End (date, optional)
+- Re-run button in the table will re-use the stored `report_date`/`timing` from the run record
 
