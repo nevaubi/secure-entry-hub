@@ -11,6 +11,7 @@ const TopNavbar = () => {
   const navItems = [
     { label: 'Dashboard', to: '/dashboard' },
     { label: 'Backfill', to: '/backfill' },
+    { label: 'Backfill2', to: '/backfill2' },
   ];
 
   return (
