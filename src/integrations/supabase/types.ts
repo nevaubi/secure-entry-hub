@@ -557,6 +557,42 @@ export type Database = {
         }
         Relationships: []
       }
+      standardized_processing_runs: {
+        Row: {
+          completed_at: string | null
+          created_at: string | null
+          data_sources_used: string[] | null
+          error_message: string | null
+          files_updated: number | null
+          id: string
+          started_at: string | null
+          status: string
+          ticker: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string | null
+          data_sources_used?: string[] | null
+          error_message?: string | null
+          files_updated?: number | null
+          id?: string
+          started_at?: string | null
+          status?: string
+          ticker: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string | null
+          data_sources_used?: string[] | null
+          error_message?: string | null
+          files_updated?: number | null
+          id?: string
+          started_at?: string | null
+          status?: string
+          ticker?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
