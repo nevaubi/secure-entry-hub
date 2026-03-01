@@ -12,8 +12,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, RefreshCw, Play, MoreVertical, CheckCircle, XCircle, RotateCcw } from 'lucide-react';
+import { Loader2, RefreshCw, Play, MoreVertical, CheckCircle, XCircle, RotateCcw, Upload } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -32,6 +34,10 @@ const Backfill2 = () => {
   const [reportDate, setReportDate] = useState(todayStr());
   const [timing, setTiming] = useState<'afterhours' | 'premarket'>('afterhours');
   const [fiscalPeriodEnd, setFiscalPeriodEnd] = useState('');
+  const [bulkTickers, setBulkTickers] = useState('');
+  const [bulkReportDate, setBulkReportDate] = useState(todayStr());
+  const [bulkTiming, setBulkTiming] = useState<'afterhours' | 'premarket'>('afterhours');
+  const [bulkProgress, setBulkProgress] = useState<{ total: number; sent: boolean } | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -81,6 +87,46 @@ const Backfill2 = () => {
       toast({ title: 'Trigger failed', description: String(error), variant: 'destructive' });
     },
   });
+
+  // Bulk trigger mutation
+  const bulkTriggerMutation = useMutation({
+    mutationFn: async (tickerList: { ticker: string; report_date: string; timing: string }[]) => {
+      const response = await supabase.functions.invoke('bulk-trigger-standardized', {
+        body: { tickers: tickerList },
+      });
+      if (response.error) throw response.error;
+      return response.data;
+    },
+    onSuccess: (data) => {
+      toast({ title: 'Bulk processing queued', description: `${data?.count || 0} tickers sent to agent` });
+      setBulkProgress({ total: data?.count || 0, sent: true });
+      queryClient.invalidateQueries({ queryKey: ['standardized-runs'] });
+    },
+    onError: (error) => {
+      toast({ title: 'Bulk trigger failed', description: String(error), variant: 'destructive' });
+      setBulkProgress(null);
+    },
+  });
+
+  // Parse bulk tickers from textarea (one per line, or comma-separated)
+  const parsedBulkTickers = useMemo(() => {
+    if (!bulkTickers.trim()) return [];
+    return bulkTickers
+      .split(/[\n,]+/)
+      .map(t => t.trim().toUpperCase())
+      .filter(t => t.length > 0 && t.length <= 10);
+  }, [bulkTickers]);
+
+  const handleBulkSubmit = () => {
+    if (parsedBulkTickers.length === 0 || !bulkReportDate) return;
+    const tickerList = parsedBulkTickers.map(t => ({
+      ticker: t,
+      report_date: bulkReportDate,
+      timing: bulkTiming,
+    }));
+    setBulkProgress({ total: tickerList.length, sent: false });
+    bulkTriggerMutation.mutate(tickerList);
+  };
 
   // Update status mutation
   const updateStatusMutation = useMutation({
@@ -195,6 +241,70 @@ const Backfill2 = () => {
                 Process
               </Button>
             </form>
+          </CardContent>
+        </Card>
+
+        {/* Bulk Processing Card */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Upload className="h-5 w-5" />
+              Bulk Processing
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="w-44">
+                <label className="text-sm text-muted-foreground">Report Date (shared)</label>
+                <Input
+                  type="date"
+                  value={bulkReportDate}
+                  onChange={e => setBulkReportDate(e.target.value)}
+                />
+              </div>
+              <div className="w-40">
+                <label className="text-sm text-muted-foreground">Timing (shared)</label>
+                <Select value={bulkTiming} onValueChange={(v) => setBulkTiming(v as 'afterhours' | 'premarket')}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="afterhours">After Hours</SelectItem>
+                    <SelectItem value="premarket">Pre-Market</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground">
+                Tickers (one per line or comma-separated)
+              </label>
+              <Textarea
+                placeholder="AAPL&#10;MSFT&#10;NVDA"
+                value={bulkTickers}
+                onChange={e => setBulkTickers(e.target.value)}
+                rows={6}
+              />
+              {parsedBulkTickers.length > 0 && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  {parsedBulkTickers.length} tickers parsed
+                </p>
+              )}
+            </div>
+            <div className="flex items-center gap-4">
+              <Button
+                onClick={handleBulkSubmit}
+                disabled={bulkTriggerMutation.isPending || parsedBulkTickers.length === 0 || !bulkReportDate}
+              >
+                {bulkTriggerMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Queue All ({parsedBulkTickers.length})
+              </Button>
+              {bulkProgress?.sent && (
+                <Badge variant="outline" className="text-sm">
+                  ✓ {bulkProgress.total} tickers queued
+                </Badge>
+              )}
+            </div>
           </CardContent>
         </Card>
 
