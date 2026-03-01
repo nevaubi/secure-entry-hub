@@ -9,11 +9,25 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { ticker, modal_endpoint } = await req.json();
+    const { ticker, report_date, timing, fiscal_period_end, modal_endpoint } = await req.json();
 
     if (!ticker || typeof ticker !== 'string') {
       return new Response(
         JSON.stringify({ success: false, error: 'ticker is required' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (!report_date || typeof report_date !== 'string') {
+      return new Response(
+        JSON.stringify({ success: false, error: 'report_date is required' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (!timing || (timing !== 'premarket' && timing !== 'afterhours')) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'timing must be "premarket" or "afterhours"' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -29,7 +43,8 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`Triggering standardized agent for ticker: ${ticker}`);
+    const upperTicker = ticker.toUpperCase();
+    console.log(`Triggering standardized agent for ticker: ${upperTicker}, report_date: ${report_date}, timing: ${timing}`);
 
     // Create processing run record
     const insertResponse = await fetch(
@@ -43,9 +58,12 @@ Deno.serve(async (req) => {
           'Prefer': 'return=minimal',
         },
         body: JSON.stringify({
-          ticker: ticker.toUpperCase(),
+          ticker: upperTicker,
           status: 'pending',
           started_at: new Date().toISOString(),
+          report_date,
+          timing,
+          fiscal_period_end: fiscal_period_end || null,
         }),
       }
     );
@@ -65,7 +83,7 @@ Deno.serve(async (req) => {
         JSON.stringify({
           success: true,
           message: 'Processing run created, but no Modal endpoint configured',
-          ticker: ticker.toUpperCase(),
+          ticker: upperTicker,
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
@@ -81,7 +99,12 @@ Deno.serve(async (req) => {
         'Authorization': `Bearer ${modalWebhookSecret}`,
       },
       body: JSON.stringify({
-        tickers: [{ ticker: ticker.toUpperCase() }],
+        tickers: [{
+          ticker: upperTicker,
+          report_date,
+          timing,
+          fiscal_period_end: fiscal_period_end || null,
+        }],
         callback_url: `${supabaseUrl}/functions/v1/standardized-agent-callback`,
       }),
     });
@@ -92,7 +115,7 @@ Deno.serve(async (req) => {
 
       // Update processing run to failed
       await fetch(
-        `${supabaseUrl}/rest/v1/standardized_processing_runs?ticker=eq.${ticker.toUpperCase()}&status=eq.pending`,
+        `${supabaseUrl}/rest/v1/standardized_processing_runs?ticker=eq.${upperTicker}&status=eq.pending`,
         {
           method: 'PATCH',
           headers: {
@@ -120,8 +143,8 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Triggered standardized processing for ${ticker.toUpperCase()}`,
-        ticker: ticker.toUpperCase(),
+        message: `Triggered standardized processing for ${upperTicker}`,
+        ticker: upperTicker,
         modal_response: modalResult,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

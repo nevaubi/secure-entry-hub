@@ -564,10 +564,13 @@ export type Database = {
           data_sources_used: string[] | null
           error_message: string | null
           files_updated: number | null
+          fiscal_period_end: string | null
           id: string
+          report_date: string | null
           started_at: string | null
           status: string
           ticker: string
+          timing: string | null
         }
         Insert: {
           completed_at?: string | null
@@ -575,10 +578,13 @@ export type Database = {
           data_sources_used?: string[] | null
           error_message?: string | null
           files_updated?: number | null
+          fiscal_period_end?: string | null
           id?: string
+          report_date?: string | null
           started_at?: string | null
           status?: string
           ticker: string
+          timing?: string | null
         }
         Update: {
           completed_at?: string | null
@@ -586,10 +592,13 @@ export type Database = {
           data_sources_used?: string[] | null
           error_message?: string | null
           files_updated?: number | null
+          fiscal_period_end?: string | null
           id?: string
+          report_date?: string | null
           started_at?: string | null
           status?: string
           ticker?: string
+          timing?: string | null
         }
         Relationships: []
       }

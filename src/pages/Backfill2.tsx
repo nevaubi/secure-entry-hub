@@ -9,6 +9,9 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, RefreshCw, Play, MoreVertical, CheckCircle, XCircle, RotateCcw } from 'lucide-react';
 import {
@@ -22,8 +25,13 @@ const statusColors: Record<string, string> = {
   failed: 'bg-red-900/40 text-red-400 border-red-800',
 };
 
+const todayStr = () => new Date().toISOString().split('T')[0];
+
 const Backfill2 = () => {
   const [ticker, setTicker] = useState('');
+  const [reportDate, setReportDate] = useState(todayStr());
+  const [timing, setTiming] = useState<'afterhours' | 'premarket'>('afterhours');
+  const [fiscalPeriodEnd, setFiscalPeriodEnd] = useState('');
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -52,9 +60,14 @@ const Backfill2 = () => {
 
   // Trigger standardized agent
   const triggerMutation = useMutation({
-    mutationFn: async (tickerValue: string) => {
+    mutationFn: async (params: { ticker: string; report_date: string; timing: string; fiscal_period_end?: string }) => {
       const response = await supabase.functions.invoke('trigger-standardized-agent', {
-        body: { ticker: tickerValue.toUpperCase().trim() },
+        body: {
+          ticker: params.ticker.toUpperCase().trim(),
+          report_date: params.report_date,
+          timing: params.timing,
+          fiscal_period_end: params.fiscal_period_end || null,
+        },
       });
       if (response.error) throw response.error;
       return response.data;
@@ -111,8 +124,17 @@ const Backfill2 = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!ticker.trim()) return;
-    triggerMutation.mutate(ticker);
+    if (!ticker.trim() || !reportDate) return;
+    triggerMutation.mutate({ ticker, report_date: reportDate, timing, fiscal_period_end: fiscalPeriodEnd || undefined });
+  };
+
+  const handleRerun = (run: typeof runs[0]) => {
+    triggerMutation.mutate({
+      ticker: run.ticker,
+      report_date: (run as any).report_date || todayStr(),
+      timing: (run as any).timing || 'afterhours',
+      fiscal_period_end: (run as any).fiscal_period_end || undefined,
+    });
   };
 
   return (
@@ -130,8 +152,8 @@ const Backfill2 = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="flex items-end gap-4">
-              <div className="flex-1 max-w-xs">
+            <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-4">
+              <div className="w-36">
                 <label className="text-sm text-muted-foreground">Ticker</label>
                 <Input
                   placeholder="e.g. AAPL"
@@ -140,7 +162,35 @@ const Backfill2 = () => {
                   className="uppercase"
                 />
               </div>
-              <Button type="submit" disabled={triggerMutation.isPending || !ticker.trim()}>
+              <div className="w-44">
+                <label className="text-sm text-muted-foreground">Report Date</label>
+                <Input
+                  type="date"
+                  value={reportDate}
+                  onChange={e => setReportDate(e.target.value)}
+                />
+              </div>
+              <div className="w-40">
+                <label className="text-sm text-muted-foreground">Timing</label>
+                <Select value={timing} onValueChange={(v) => setTiming(v as 'afterhours' | 'premarket')}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="afterhours">After Hours</SelectItem>
+                    <SelectItem value="premarket">Pre-Market</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="w-44">
+                <label className="text-sm text-muted-foreground">Fiscal Period End <span className="text-xs opacity-60">(optional)</span></label>
+                <Input
+                  type="date"
+                  value={fiscalPeriodEnd}
+                  onChange={e => setFiscalPeriodEnd(e.target.value)}
+                />
+              </div>
+              <Button type="submit" disabled={triggerMutation.isPending || !ticker.trim() || !reportDate}>
                 {triggerMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Process
               </Button>
@@ -191,6 +241,8 @@ const Backfill2 = () => {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Ticker</TableHead>
+                      <TableHead>Report Date</TableHead>
+                      <TableHead>Timing</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Files Updated</TableHead>
                       <TableHead>Started</TableHead>
@@ -203,6 +255,8 @@ const Backfill2 = () => {
                     {runs.map((run) => (
                       <TableRow key={run.id}>
                         <TableCell className="font-medium">{run.ticker}</TableCell>
+                        <TableCell className="text-sm">{(run as any).report_date || '—'}</TableCell>
+                        <TableCell className="text-sm">{(run as any).timing || '—'}</TableCell>
                         <TableCell>
                           <Badge
                             variant="outline"
@@ -231,7 +285,7 @@ const Backfill2 = () => {
                               size="sm"
                               variant="outline"
                               disabled={run.status === 'pending' || run.status === 'processing' || triggerMutation.isPending}
-                              onClick={() => triggerMutation.mutate(run.ticker)}
+                              onClick={() => handleRerun(run)}
                             >
                               <Play className="mr-1 h-3 w-3" />
                               Re-run
