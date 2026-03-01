@@ -10,6 +10,7 @@ import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
 import ImportCompanies from "./pages/ImportCompanies";
 import Backfill from "./pages/Backfill";
+import Backfill2 from "./pages/Backfill2";
 
 const queryClient = new QueryClient();
 
@@ -37,6 +38,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <Backfill />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/backfill2"
+              element={
+                <ProtectedRoute>
+                  <Backfill2 />
                 </ProtectedRoute>
               }
             />
