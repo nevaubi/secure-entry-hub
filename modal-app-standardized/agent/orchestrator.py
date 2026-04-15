@@ -143,6 +143,38 @@ TOOLS = [
             },
             "required": ["sheet_name", "date_header", "period_header"]
         }
+    },
+    {
+        "name": "update_excel_cells_batch",
+        "description": "Update multiple cells at once in the current Excel file. Much more efficient than calling update_excel_cell repeatedly. Use this as the preferred method for filling data.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "sheet_name": {
+                    "type": "string",
+                    "description": "Name of the Excel sheet"
+                },
+                "updates": {
+                    "type": "array",
+                    "description": "Array of cell updates to apply",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "cell_ref": {
+                                "type": "string",
+                                "description": "Cell reference like 'B3' or 'B15'"
+                            },
+                            "value": {
+                                "type": ["string", "number"],
+                                "description": "The value to set"
+                            }
+                        },
+                        "required": ["cell_ref", "value"]
+                    }
+                }
+            },
+            "required": ["sheet_name", "updates"]
+        }
     }
 ]
 
@@ -205,7 +237,7 @@ WORKFLOW:
    - Call insert_new_period_column with the date from the StockAnalysis markdown table
    - For annual files, ALWAYS use "Q4 YYYY" as the period_header
    - For quarterly files, use the specific quarter (e.g. "Q1 2026")
-   - Then batch-fill ALL cells using update_excel_cell
+   - Then batch-fill ALL cells using update_excel_cells_batch (preferred) or update_excel_cell
 5. If no new column is needed and there are no empty cells, respond with "FILE COMPLETE"
 6. When done filling cells, respond with "FILE COMPLETE"
 
@@ -413,6 +445,26 @@ Return ONLY the markdown table, nothing else."""},
 
         return json.dumps(result)
 
+    elif tool_name == "update_excel_cells_batch":
+        bucket_name = context.current_file
+        if not bucket_name:
+            return json.dumps({"error": "No current file set"})
+
+        updater = context.get_updater(bucket_name)
+        if not updater:
+            return json.dumps({"error": f"Cannot open file {bucket_name}"})
+
+        sheet_name = tool_input["sheet_name"]
+        updates = tool_input["updates"]
+        batch = [{"sheet_name": sheet_name, "cell_ref": u["cell_ref"], "value": u["value"]} for u in updates]
+        successful = updater.update_cells_batch(batch)
+
+        if successful > 0:
+            context.files_modified.add(bucket_name)
+            context.cells_written[bucket_name] = context.cells_written.get(bucket_name, 0) + successful
+
+        return json.dumps({"success": True, "cells_updated": successful, "total_requested": len(updates)})
+
     else:
         return json.dumps({"error": f"Unknown tool: {tool_name}"})
 
@@ -541,8 +593,8 @@ def run_agent(ticker: str) -> dict[str, Any]:
                     print(f"\n  --- {file_name} iteration {iteration}/{max_file_iterations} ---")
 
                     response = client.messages.create(
-                        model="claude-sonnet-4-5",
-                        max_tokens=8192 if iteration == 1 else 6096,
+                        model="claude-sonnet-4-6",
+                        max_tokens=15000,
                         system=system_prompt,
                         tools=TOOLS,
                         messages=messages,

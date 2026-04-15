@@ -72,15 +72,22 @@ def analyze_excel_file(file_path: Path) -> dict[str, Any]:
         return {"error": str(e), "file_name": file_path.name}
 
 
-def analyze_excel_file_full(file_path: Path) -> dict[str, Any]:
-    """Analyze an Excel file and extract ALL row labels, headers, and cell values."""
+def analyze_excel_file_full(file_path: Path, max_data_cols: int = 5) -> dict[str, Any]:
+    """Analyze an Excel file and extract row labels, headers, and cell values.
+    
+    Args:
+        file_path: Path to the Excel file.
+        max_data_cols: Maximum number of data columns to include (besides column A labels).
+                       Default 5 means columns A-F are returned.
+    """
     try:
         workbook = openpyxl.load_workbook(file_path, data_only=True)
         analysis = {"file_name": file_path.name, "sheets": []}
 
         for sheet_name in workbook.sheetnames:
             sheet = workbook[sheet_name]
-            max_col = min(sheet.max_column or 1, 30)
+            # Cap to column A (labels) + max_data_cols data columns
+            max_col = min(sheet.max_column or 1, 1 + max_data_cols)
             max_row = min(sheet.max_row or 1, 200)
 
             headers = []
