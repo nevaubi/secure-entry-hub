@@ -224,6 +224,11 @@ class StockAnalysisBrowser:
         Returns:
             Dict with success status, URL visited, and screenshot bytes
         """
+        # Re-verify session is still valid before navigating
+        if self.logged_in and not self.verify_logged_in():
+            print("Session expired, re-logging in...")
+            self.logged_in = False
+
         if not self.login():
             return {"success": False, "error": "Failed to login"}
 
